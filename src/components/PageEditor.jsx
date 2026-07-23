@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useStore } from '../store/useStore'
@@ -18,6 +18,13 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   const [title, setTitle] = useState('')
   const [emoji, setEmoji] = useState('')
   const [coverImage, setCoverImage] = useState('')
+  const titleInputRef = useRef(null)
+
+  useEffect(() => {
+    if (page && (page.title === '' || !page.title) && titleInputRef.current) {
+      setTimeout(() => titleInputRef.current?.focus(), 50)
+    }
+  }, [activePageId, page?.title])
 
   const editor = useEditor({
     extensions: [StarterKit],
@@ -118,11 +125,20 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
               </div>
             )}
             <input 
+              ref={titleInputRef}
               className="page-title-input" 
               value={title} 
               onChange={(e) => {
                 setTitle(e.target.value)
                 updatePage({ title: e.target.value })
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  if (editor) {
+                    editor.commands.focus()
+                  }
+                }
               }}
               placeholder="Untitled"
             />
