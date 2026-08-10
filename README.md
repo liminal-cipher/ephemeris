@@ -12,7 +12,7 @@ I wanted a Notion I owned. Not a cheaper Notion or a faster one, but one where t
 
 Ephemeris is the first cut at the substrate that would need: a workspace where pages, covers, and icons live in the browser's own database, with no account and no network call anywhere in the write path.
 
-## What it does
+## What It Does
 
 - Create pages from a sidebar and switch between them
 - Write rich text through Tiptap's StarterKit: headings, lists, bold and italic, code blocks, blockquotes, driven by markdown-style input rules and keyboard shortcuts rather than a toolbar
