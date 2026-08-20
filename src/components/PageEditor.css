@@ -157,3 +157,45 @@
   color: var(--text-muted);
   font-size: 1.1rem;
 }
+.emoji-picker-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 50;
+  background-color: var(--sidebar-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.5rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  width: 220px;
+}
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.25rem;
+}
+.emoji-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: background-color var(--transition-speed);
+}
+.emoji-btn:hover {
+  background-color: var(--hover-bg);
+}
+.emoji-picker-action {
+  background: none;
+  border: none;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+.emoji-picker-action:hover {
+  background-color: var(--hover-bg);
+  color: var(--text-main);
+}
