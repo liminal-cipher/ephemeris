@@ -1,23 +1,24 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useStore } from '../store/useStore'
-import { FileText, Plus, Download, Upload } from 'lucide-react'
+import { FileText, Plus, Download, Upload, Search } from 'lucide-react'
 import { exportWorkspace, importWorkspace } from '../utils/exportImport'
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import './Sidebar.css'
 
 export default function Sidebar() {
   const pages = useLiveQuery(() => db.pages.toArray())
   const { activePageId, setActivePageId } = useStore()
   const fileInputRef = useRef(null)
+  const [searchQuery, setSearchQuery] = useState('')
 
-  const createNewPage = async () => {
+  const createNewPage = async (parentId = null) => {
     const id = await db.pages.add({
       title: '',
       emoji: '',
       coverImage: '',
       content: '',
-      parentId: null,
+      parentId: parentId,
       createdAt: Date.now(),
       updatedAt: Date.now()
     })
@@ -46,25 +47,88 @@ export default function Sidebar() {
     setActivePageId(pages[0].id)
   }
 
+  // Build tree for hierarchical rendering
+  const buildTree = (pagesList) => {
+    const tree = []
+    const lookup = {}
+    pagesList.forEach(p => lookup[p.id] = { ...p, children: [] })
+    pagesList.forEach(p => {
+      if (p.parentId && lookup[p.parentId]) {
+        lookup[p.parentId].children.push(lookup[p.id])
+      } else {
+        tree.push(lookup[p.id])
+      }
+    })
+    return tree
+  }
+
+  const renderPages = (pagesToRender, depth = 0) => {
+    return pagesToRender.map(page => (
+      <div key={page.id}>
+        <div 
+          className={`sidebar-item ${activePageId === page.id ? 'active' : ''}`}
+          onClick={() => setActivePageId(page.id)}
+          style={{ paddingLeft: `${depth * 1 + 1}rem` }}
+        >
+          <span className="emoji">{page.emoji || <FileText size={16} />}</span>
+          <span className="title">{page.title || 'Untitled'}</span>
+          <div className="item-actions">
+            <button 
+              className="icon-btn-small" 
+              onClick={(e) => { e.stopPropagation(); createNewPage(page.id); }}
+              title="Add child page"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+        </div>
+        {page.children && page.children.length > 0 && renderPages(page.children, depth + 1)}
+      </div>
+    ))
+  }
+
+  const filteredPages = searchQuery 
+    ? pages?.filter(p => (p.title || 'Untitled').toLowerCase().includes(searchQuery.toLowerCase()))
+    : []
+
+  const tree = !searchQuery && pages ? buildTree(pages) : []
+
   return (
     <div className="sidebar">
       <div className="sidebar-header">
         <div className="workspace-name">My Workspace</div>
+        <div className="search-bar">
+          <Search size={14} style={{ color: 'var(--text-muted)' }} />
+          <input 
+            type="text" 
+            placeholder="Search pages..." 
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+        </div>
       </div>
       <div className="sidebar-content">
-        {pages?.map(page => (
-          <div 
-            key={page.id} 
-            className={`sidebar-item ${activePageId === page.id ? 'active' : ''}`}
-            onClick={() => setActivePageId(page.id)}
-          >
-            <span className="emoji">{page.emoji || <FileText size={16} />}</span>
-            <span className="title">{page.title || 'Untitled'}</span>
-          </div>
-        ))}
+        {searchQuery ? (
+          filteredPages.length > 0 ? (
+            filteredPages.map(page => (
+              <div 
+                key={page.id} 
+                className={`sidebar-item ${activePageId === page.id ? 'active' : ''}`}
+                onClick={() => setActivePageId(page.id)}
+              >
+                <span className="emoji">{page.emoji || <FileText size={16} />}</span>
+                <span className="title">{page.title || 'Untitled'}</span>
+              </div>
+            ))
+          ) : (
+            <div className="empty-state" style={{ padding: '1rem', fontSize: '0.85rem' }}>No pages found.</div>
+          )
+        ) : (
+          renderPages(tree)
+        )}
       </div>
       <div className="sidebar-footer" style={{ flexDirection: 'column', gap: '8px' }}>
-        <button className="new-page-btn" onClick={createNewPage}>
+        <button className="new-page-btn" onClick={() => createNewPage(null)}>
           <Plus size={16} />
           New Page
         </button>
