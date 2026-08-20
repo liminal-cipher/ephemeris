@@ -19,6 +19,7 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   const [emoji, setEmoji] = useState('')
   const [coverImage, setCoverImage] = useState('')
   const titleInputRef = useRef(null)
+  const editorTimeoutRef = useRef(null)
 
   useEffect(() => {
     if (page && (page.title === '' || !page.title) && titleInputRef.current) {
@@ -31,10 +32,16 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
     content: '',
     onUpdate: ({ editor }) => {
       if (activePageId) {
-        db.pages.update(activePageId, { 
-          content: JSON.stringify(editor.getJSON()),
-          updatedAt: Date.now()
-        })
+        if (editorTimeoutRef.current) {
+          clearTimeout(editorTimeoutRef.current)
+        }
+        const content = JSON.stringify(editor.getJSON())
+        editorTimeoutRef.current = setTimeout(() => {
+          db.pages.update(activePageId, { 
+            content: content,
+            updatedAt: Date.now()
+          })
+        }, 500)
       }
     }
   })
