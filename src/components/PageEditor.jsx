@@ -4,11 +4,11 @@ import { db } from '../db/db'
 import { useStore } from '../store/useStore'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import { Image as ImageIcon, Smile, Menu } from 'lucide-react'
+import { Image as ImageIcon, Smile, Menu, Trash2 } from 'lucide-react'
 import './PageEditor.css'
 
 export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
-  const { activePageId } = useStore()
+  const { activePageId, setActivePageId } = useStore()
   
   const page = useLiveQuery(
     () => activePageId ? db.pages.get(activePageId) : null,
@@ -72,6 +72,13 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
     }
   }
 
+  const handleDeletePage = async () => {
+    if (window.confirm('Are you sure you want to delete this page?')) {
+      await db.pages.delete(activePageId)
+      setActivePageId(null)
+    }
+  }
+
   const handleCoverUpload = (e) => {
     const file = e.target.files[0]
     if (file) {
@@ -90,13 +97,18 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
 
   return (
     <div className="page-editor-wrapper">
-      <div className="top-nav">
-        {!sidebarOpen && (
-          <button className="icon-btn" onClick={onToggleSidebar}>
-            <Menu size={20} />
-          </button>
-        )}
-        <div className="breadcrumbs">{page.title || 'Untitled'}</div>
+      <div className="top-nav" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {!sidebarOpen && (
+            <button className="icon-btn" onClick={onToggleSidebar}>
+              <Menu size={20} />
+            </button>
+          )}
+          <div className="breadcrumbs">{page.title || 'Untitled'}</div>
+        </div>
+        <button className="icon-btn" onClick={handleDeletePage} title="Delete Page" style={{ color: 'var(--text-secondary)' }}>
+          <Trash2 size={16} />
+        </button>
       </div>
 
       <div className="editor-container">
