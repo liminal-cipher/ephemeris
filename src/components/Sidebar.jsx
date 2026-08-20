@@ -1,12 +1,15 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useStore } from '../store/useStore'
-import { FileText, Plus } from 'lucide-react'
+import { FileText, Plus, Download, Upload } from 'lucide-react'
+import { exportWorkspace, importWorkspace } from '../utils/exportImport'
+import { useRef } from 'react'
 import './Sidebar.css'
 
 export default function Sidebar() {
   const pages = useLiveQuery(() => db.pages.toArray())
   const { activePageId, setActivePageId } = useStore()
+  const fileInputRef = useRef(null)
 
   const createNewPage = async () => {
     const id = await db.pages.add({
@@ -19,6 +22,23 @@ export default function Sidebar() {
       updatedAt: Date.now()
     })
     setActivePageId(id)
+  }
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      try {
+        const count = await importWorkspace(file)
+        alert(`Successfully imported ${count} pages.`)
+      } catch (err) {
+        alert('Failed to import backup file.')
+      }
+      e.target.value = '' // reset input
+    }
   }
 
   // Set first page active if none selected
@@ -43,11 +63,26 @@ export default function Sidebar() {
           </div>
         ))}
       </div>
-      <div className="sidebar-footer">
+      <div className="sidebar-footer" style={{ flexDirection: 'column', gap: '8px' }}>
         <button className="new-page-btn" onClick={createNewPage}>
           <Plus size={16} />
           New Page
         </button>
+        <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+          <button className="new-page-btn" onClick={exportWorkspace} style={{ flex: 1 }} title="Export Backup">
+            <Download size={16} /> Export
+          </button>
+          <button className="new-page-btn" onClick={handleImportClick} style={{ flex: 1 }} title="Import Backup">
+            <Upload size={16} /> Import
+          </button>
+        </div>
+        <input 
+          type="file" 
+          accept=".json" 
+          ref={fileInputRef} 
+          style={{ display: 'none' }} 
+          onChange={handleFileChange} 
+        />
       </div>
     </div>
   )
