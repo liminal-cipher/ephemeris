@@ -66,6 +66,10 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
     }
   }, [page, editor])
 
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+
+  const EMOJI_LIST = ['📄', '💡', '📝', '🚀', '⭐️', '📌', '📚', '🛠️', '👋', '🎯', '✨', '🔥']
+
   const updatePage = (changes) => {
     if (activePageId) {
       db.pages.update(activePageId, { ...changes, updatedAt: Date.now() })
@@ -127,20 +131,32 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
                 <input type="file" accept="image/*" hidden onChange={handleCoverUpload} />
               </label>
               {!emoji && (
-                <button className="page-action-btn" onClick={() => updatePage({ emoji: '📄' })}>
+                <button className="page-action-btn" onClick={() => setShowEmojiPicker(true)}>
                   <Smile size={16} /> Add icon
                 </button>
               )}
             </div>
           )}
 
-          <div className="page-header">
+          <div className="page-header" style={{ position: 'relative' }}>
             {emoji && (
-              <div className="page-emoji" onClick={() => {
-                const newEmoji = prompt("Enter an emoji:", emoji);
-                if (newEmoji) updatePage({ emoji: newEmoji })
-              }}>
+              <div className="page-emoji" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
                 {emoji}
+              </div>
+            )}
+            {showEmojiPicker && (
+              <div className="emoji-picker-popover">
+                <div className="emoji-grid">
+                  {EMOJI_LIST.map(em => (
+                    <button key={em} className="emoji-btn" onClick={() => { updatePage({ emoji: em }); setShowEmojiPicker(false); }}>
+                      {em}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '8px' }}>
+                  <button className="emoji-picker-action" onClick={() => { updatePage({ emoji: '' }); setShowEmojiPicker(false); }}>Remove</button>
+                  <button className="emoji-picker-action" onClick={() => setShowEmojiPicker(false)}>Close</button>
+                </div>
               </div>
             )}
             <input 
