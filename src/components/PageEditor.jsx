@@ -4,6 +4,11 @@ import { db } from '../db/db'
 import { useStore } from '../store/useStore'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import Collaboration from '@tiptap/extension-collaboration'
+import CollaborationCursor from '@tiptap/extension-collaboration-cursor'
+import * as Y from 'yjs'
+import { WebrtcProvider } from 'y-webrtc'
+import { IndexeddbPersistence } from 'y-indexeddb'
 import { Image as ImageIcon, Smile, Menu, Trash2 } from 'lucide-react'
 import './PageEditor.css'
 
@@ -21,20 +26,72 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   const titleInputRef = useRef(null)
   const editorTimeoutRef = useRef(null)
 
+  const [ydoc, setYdoc] = useState(null)
+  const [provider, setProvider] = useState(null)
+  const [isSynced, setIsSynced] = useState(false)
+
   useEffect(() => {
     if (page && (page.title === '' || !page.title) && titleInputRef.current) {
       setTimeout(() => titleInputRef.current?.focus(), 50)
     }
   }, [activePageId, page?.title])
 
+  useEffect(() => {
+    setIsSynced(false)
+    if (!activePageId) {
+      setProvider(null)
+      setYdoc(null)
+      return
+    }
+
+    const doc = new Y.Doc()
+    
+    // Offline persistence
+    const persistence = new IndexeddbPersistence(`ephemeris-page-${activePageId}`, doc)
+    
+    persistence.on('synced', () => {
+      setIsSynced(true)
+    })
+    
+    // P2P sync
+    const webrtcProvider = new WebrtcProvider(`ephemeris-room-${activePageId}`, doc, {
+      signaling: ['wss://signaling.yjs.dev', 'wss://y-webrtc-signaling-eu.herokuapp.com']
+    })
+
+    const colors = ['#958DF1', '#F98181', '#FBCE76', '#8B5CF6', '#3B82F6', '#10B981']
+    webrtcProvider.awareness.setLocalStateField('user', {
+      name: `User ${Math.floor(Math.random() * 1000)}`,
+      color: colors[Math.floor(Math.random() * colors.length)],
+    })
+
+    setYdoc(doc)
+    setProvider(webrtcProvider)
+
+    return () => {
+      webrtcProvider.destroy()
+      doc.destroy()
+    }
+  }, [activePageId])
+
   const editor = useEditor({
-    extensions: [StarterKit],
-    content: '',
+    extensions: ydoc && provider ? [
+      StarterKit.configure({
+        history: false,
+      }),
+      Collaboration.configure({
+        document: ydoc,
+      }),
+      CollaborationCursor.configure({
+        provider: provider,
+        user: provider.awareness.getLocalState().user,
+      })
+    ] : [],
     onUpdate: ({ editor }) => {
       if (activePageId) {
         if (editorTimeoutRef.current) {
           clearTimeout(editorTimeoutRef.current)
         }
+        // Snapshot to Dexie for GraphView and local search
         const content = JSON.stringify(editor.getJSON())
         editorTimeoutRef.current = setTimeout(() => {
           db.pages.update(activePageId, { 
@@ -44,30 +101,32 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
         }, 500)
       }
     }
-  })
+  }, [ydoc, provider])
 
   useEffect(() => {
     if (page) {
       setTitle(page.title || '')
       setEmoji(page.emoji || '')
       setCoverImage(page.coverImage || '')
-      if (editor && page.content) {
-        const currentContent = JSON.stringify(editor.getJSON())
-        if (currentContent !== page.content) {
+      
+      // Legacy data migration: If Yjs doc is empty but Dexie has content
+      if (editor && ydoc && isSynced && page.content) {
+        const fragment = ydoc.getXmlFragment('default')
+        if (fragment.length === 0) {
           try {
-            editor.commands.setContent(JSON.parse(page.content))
+            const parsed = JSON.parse(page.content)
+            if (parsed && parsed.content && parsed.content.length > 0) {
+              editor.commands.setContent(parsed)
+            }
           } catch(e) {
-            editor.commands.setContent(page.content)
+             editor.commands.setContent(page.content)
           }
         }
-      } else if (editor && !page.content) {
-        editor.commands.setContent('')
       }
     }
-  }, [page, editor])
+  }, [page, editor, ydoc])
 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
-
   const EMOJI_LIST = ['📄', '💡', '📝', '🚀', '⭐️', '📌', '📚', '🛠️', '👋', '🎯', '✨', '🔥']
 
   const updatePage = (changes) => {
@@ -95,7 +154,7 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
     }
   }
 
-  if (!page) {
+  if (!page || !editor) {
     return <div className="empty-state">Select or create a page</div>
   }
 
