@@ -16,6 +16,7 @@
     "@tiptap/pm": "^3.28.0",
     "@tiptap/react": "^3.28.0",
     "@tiptap/starter-kit": "^3.28.0",
+    "@tiptap/y-tiptap": "^3.0.9",
     "dexie": "^4.4.4",
     "dexie-react-hooks": "^4.4.0",
     "lucide-react": "^1.26.0",
