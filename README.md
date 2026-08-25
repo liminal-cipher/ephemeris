@@ -1,72 +1,62 @@
 # Ephemeris
 
-A local-first note workspace that keeps every page in the browser and never talks to a server.
+> A local-first note workspace that keeps every page in the browser and never talks to a centralized server.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-build-646CFF?logo=vite&logoColor=white)
+![Yjs](https://img.shields.io/badge/Yjs-CRDT-FF9900)
 
 ## Motivation
 
 I wanted a Notion I owned. Not a cheaper Notion or a faster one, but one where the notes sit on my machine and keep working when a company changes its pricing, its terms, or its mind about staying in business. The long-term idea was to put a model on top of my own notes rather than hand them to someone else's.
 
-Ephemeris is the first cut at the substrate that would need: a workspace where pages, covers, and icons live in the browser's own database, with no account and no network call anywhere in the write path.
+Ephemeris is the first cut at the substrate that would need: a workspace where pages, covers, and icons live in the browser's own database, with no account and no centralized database in the write path.
 
 ## What It Does
 
 - Create pages from a sidebar and switch between them
+- Organize notes with hierarchical nested pages and find them via search
+- **Collaborative Editing:** Edit notes in real-time with peers over WebRTC, without relying on a central backend.
+- **Graph View:** Visualize connections between pages linked via `[[wiki-link]]` syntax on an interactive 2D physics graph.
 - Write rich text through Tiptap's StarterKit: headings, lists, bold and italic, code blocks, blockquotes, driven by markdown-style input rules and keyboard shortcuts rather than a toolbar
 - Give a page an icon and a cover image, uploaded from disk and stored inline
-- Persist every change to IndexedDB as it is typed, so there is no save button and no loading state
-- Press Enter in the title to drop focus into the body
+- Delete pages completely from the UI and IndexedDB
+- Persist every change automatically offline using CRDTs (`y-indexeddb`) and Dexie fallback snapshots.
+- Export the entire workspace to a JSON file and import it back for data portability
 
-There is no sign-up, no server, and no network request. Opening the app offline behaves exactly the same as opening it online.
+There is no sign-up, no server, and no network request required to write. Opening the app offline behaves exactly the same as opening it online.
 
 ## Architecture
 
 ```mermaid
 graph TD
     A[React components] -->|activePageId| B(Zustand store)
-    A -->|keystrokes| C(Tiptap / ProseMirror)
-    C -->|onUpdate: document as JSON| D(Dexie.js over IndexedDB)
-    D -->|useLiveQuery: reactive reads| A
+    A -->|keystrokes| C(Tiptap / Yjs)
+    C <-->|Sync| E(y-webrtc / P2P)
+    C -->|Persist CRDT| F(y-indexeddb)
+    C -->|Snapshot text| D(Dexie.js over IndexedDB)
+    D -->|useLiveQuery: reactive reads for Sidebar/Graph| A
 ```
 
-Reads go through `dexie-react-hooks`, so a write to the database re-renders whatever is showing it without any manual refresh. Writes are unbuffered: each editor update is one IndexedDB write.
-
-```text
-ephemeris/
-├── src/
-│   ├── db/db.js                  # Dexie schema, seeds a welcome page on first run
-│   ├── store/useStore.js         # Zustand store, holds the active page id
-│   └── components/
-│       ├── Sidebar.jsx           # Page list and creation
-│       └── PageEditor.jsx        # Title, icon, cover, and the Tiptap surface
-└── vite.config.js
-```
+We use a hybrid architecture: `Dexie.js` powers the fast, reactive sidebar metadata and graph view indexing, while `Yjs` handles the complex rich-text conflict resolution and peer-to-peer sync for the active page editor.
 
 ## Tech Decisions
 
 | Component | Choice | Why this over alternatives |
 | --- | --- | --- |
 | Storage | Dexie.js over raw IndexedDB | The native IndexedDB API is event-based and verbose for even simple queries. Dexie gives promises, and `useLiveQuery` turns a table into a reactive source, which removes the need for a data-fetching layer |
+| CRDT | Yjs over Automerge | Yjs has deeper, battle-tested integration with ProseMirror/Tiptap and an excellent ecosystem of modular persistence/sync providers (`y-webrtc`, `y-indexeddb`). |
+| Sync | y-webrtc over WebSocket server | True local-first requires no backend. WebRTC enables peers to directly sync their CRDT states via signaling servers, maintaining privacy and zero infra cost. |
+| Graph View | react-force-graph-2d over raw D3 | Provides an immediate, performant canvas-based physics simulation for note connections without manually fighting D3's DOM manipulation in React. |
 | Editor | Tiptap over a textarea or a markdown parser | ProseMirror stores the document as structured JSON, not a string. Block-level features later depend on the content already being a tree |
 | State | Zustand over Context or Redux | Exactly one value is global, the active page id. That is six lines in Zustand and a provider tree in the alternatives |
-| Build | React + Vite | Fast dev server, and a static bundle is the entire deployment story for an app with no backend |
-| Styling | Vanilla CSS | No component library to fight for control of spacing and animation at this size |
-| Cover images | Base64 inside the page record | Keeps everything in one store, so a page is self-contained and there are no file handles to re-request permission for. The cost is database size, which is unmeasured |
+| Testing | Vitest + RTL over Jest | Native ESM and Vite integration makes configuration near-zero, and runs incredibly fast using worker threads. |
 
 ## Results & Limitations
 
-Nothing here has been measured. There are no tests, no benchmarks, and the app has never been deployed or used beyond local development.
-
-- **There is no export or import.** This is the serious one. The whole motivation was not losing notes to somebody else's decision, and right now clearing site data in the browser destroys everything with no recovery path. The prototype moved the risk rather than removing it.
-- **Pages cannot be deleted.** The sidebar creates and selects; nothing removes. Renaming works only by editing the title in the editor.
-- **There is no search.** Once the page count passes what fits in the sidebar, there is no way to find anything.
-- **Nested pages do not exist.** The schema carries a `parentId` column and it is never set to anything but `null`.
-- Every keystroke is an IndexedDB write, with no debounce. It has not caused a visible problem at this size, but it has not been profiled either.
-- The icon picker is a browser `prompt()` asking the user to type an emoji.
-- The IndexedDB database is still named `NotionCloneDB` from the scaffold. Renaming it needs a migration, since existing local data is keyed to the old name.
+- **Signaling Server Dependency.** While data sync is P2P, WebRTC requires signaling servers to establish the initial connection. We currently rely on public signaling servers which are not guaranteed for production uptime.
+- **Database size constraints.** Storing base64 cover images inline keeps pages self-contained, but the performance impact on Dexie.js and Yjs at scale remains unmeasured.
 
 ## Getting Started
 
@@ -79,17 +69,20 @@ npm install
 npm run dev
 ```
 
-There is nothing to configure. No environment variables, no API keys, no database to provision, because there is no backend. `npm run lint` runs oxlint, and `npm run build` produces a static bundle.
+There is nothing to configure. No environment variables, no API keys, no database to provision, because there is no backend. 
+Tests can be run with `npm run test`.
 
-## Retrospective
+## Roadmap
 
-**Building the shell before the thing that made it worth having was the wrong order.** The editor, the sidebar, the covers, and the icons are the parts every note app already has, and they are the parts a user would abandon this one over anyway. The reason to write my own was owning the data and eventually running a model against it, and neither of those got started. If I picked this up again I would begin with export and import, because a local-first app without them is a worse guarantee than the cloud service it was meant to replace, and then with retrieval over my own notes.
-
-The technical choices held up. Structuring content as ProseMirror JSON rather than markdown text, and putting `parentId` in the schema from the start, both leave room for the block-level and nested-page work without a migration. The ideas that stayed unbuilt, a graph view over linked notes and peer-to-peer sync through CRDTs, are still the right ones. They are just further away than a three-day prototype suggests.
+The shell of the app is complete with V3 refinements (CRDTs and Graph View). Future exploration will focus on maximizing the value of local-first notes:
+- **Workspace CRDT**: Move page creation, renaming, and sidebar tree metadata into a global Yjs document to make the entire workspace collaborative, not just the editor content.
+- **Asynchronous Sync (Relay Server)**: Implement a lightweight encrypted relay (e.g. `y-websocket`) to allow peers to sync changes even if they aren't online at the same time.
+- **Performance Optimization**: Offload Dexie JSON snapshots to a Web Worker, or trigger them only on page unmount, to prevent main-thread stuttering during fast keystrokes.
+- **Block-level Interaction**: Build custom Node Views and drag handles in Tiptap to enable true Notion-style block drag-and-drop.
 
 ## Status
 
-Paused. No work since 2026-07-23, and no active plan to resume.
+Active. Local development resumed. Last updated 2026-08-25.
 
 ## License
 
