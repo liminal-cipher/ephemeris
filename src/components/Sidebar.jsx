@@ -1,12 +1,12 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useStore } from '../store/useStore'
-import { FileText, Plus, Download, Upload, Search } from 'lucide-react'
+import { FileText, Plus, Download, Upload, Search, Network } from 'lucide-react'
 import { exportWorkspace, importWorkspace } from '../utils/exportImport'
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import './Sidebar.css'
 
-export default function Sidebar() {
+export default function Sidebar({ onOpenGraph }) {
   const pages = useLiveQuery(() => db.pages.toArray())
   const { activePageId, setActivePageId } = useStore()
   const fileInputRef = useRef(null)
@@ -43,9 +43,11 @@ export default function Sidebar() {
   }
 
   // Set first page active if none selected
-  if (pages?.length > 0 && !activePageId) {
-    setActivePageId(pages[0].id)
-  }
+  useEffect(() => {
+    if (pages?.length > 0 && !activePageId) {
+      setActivePageId(pages[0].id)
+    }
+  }, [pages, activePageId, setActivePageId])
 
   // Build tree for hierarchical rendering
   const buildTree = (pagesList) => {
@@ -131,6 +133,10 @@ export default function Sidebar() {
         <button className="new-page-btn" onClick={() => createNewPage(null)}>
           <Plus size={16} />
           New Page
+        </button>
+        <button className="new-page-btn" onClick={onOpenGraph} style={{ background: 'var(--bg-hover)', color: 'var(--text-primary)' }}>
+          <Network size={16} />
+          Graph View
         </button>
         <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
           <button className="new-page-btn" onClick={exportWorkspace} style={{ flex: 1 }} title="Export Backup">
