@@ -124,7 +124,7 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
         }
       }
     }
-  }, [page, editor, ydoc])
+  }, [page, editor, ydoc, isSynced])
 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const EMOJI_LIST = ['📄', '💡', '📝', '🚀', '⭐️', '📌', '📚', '🛠️', '👋', '🎯', '✨', '🔥']
