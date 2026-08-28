@@ -1,24 +1,43 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useStore } from '../store/useStore'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEditor, EditorContent, BubbleMenu } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor'
+import Mention from '@tiptap/extension-mention'
+import Underline from '@tiptap/extension-underline'
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
+import { lowlight } from 'lowlight'
+import MathExtension from '@aarkue/tiptap-math-extension'
+import slashCommand from './editor/slashExtension'
 import * as Y from 'yjs'
 import { WebrtcProvider } from 'y-webrtc'
 import { IndexeddbPersistence } from 'y-indexeddb'
-import { Image as ImageIcon, Smile, Menu, Trash2 } from 'lucide-react'
+import { Image as ImageIcon, Smile, Menu, Trash2, Link as LinkIcon, Bold, Italic, Underline as UnderlineIcon, Strikethrough } from 'lucide-react'
+import suggestion from './editor/suggestion'
+import slashSuggestion from './editor/slashSuggestion'
+import { extractLinksFromPages } from '../utils/linkParser'
+import 'katex/dist/katex.min.css'
 import './PageEditor.css'
 
 export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   const { activePageId, setActivePageId } = useStore()
   
-  const page = useLiveQuery(
-    () => activePageId ? db.pages.get(activePageId) : null,
-    [activePageId]
-  )
+  const allPages = useLiveQuery(() => db.pages.toArray(), [])
+  
+  const page = useMemo(() => {
+    return allPages ? allPages.find(p => p.id === activePageId) : null
+  }, [allPages, activePageId])
+
+  const backlinks = useMemo(() => {
+    if (!allPages || !activePageId) return []
+    const { edges } = extractLinksFromPages(allPages)
+    const incomingEdgeSourceIds = edges.filter(e => e.target === activePageId).map(e => e.source)
+    const uniqueSourceIds = [...new Set(incomingEdgeSourceIds)]
+    return uniqueSourceIds.map(id => allPages.find(p => p.id === id)).filter(Boolean)
+  }, [allPages, activePageId])
 
   const [title, setTitle] = useState('')
   const [emoji, setEmoji] = useState('')
@@ -53,7 +72,8 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
       setIsSynced(true)
     })
     
-    // P2P sync
+    // P2P sync (Temporarily disabled until Track D to prevent public signaling server console errors)
+    /*
     const webrtcProvider = new WebrtcProvider(`ephemeris-room-${activePageId}`, doc, {
       signaling: ['wss://signaling.yjs.dev', 'wss://y-webrtc-signaling-eu.herokuapp.com']
     })
@@ -63,29 +83,55 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
       name: `User ${Math.floor(Math.random() * 1000)}`,
       color: colors[Math.floor(Math.random() * colors.length)],
     })
+    */
 
     setYdoc(doc)
-    setProvider(webrtcProvider)
+    setProvider(null)
 
     return () => {
-      webrtcProvider.destroy()
+      // webrtcProvider?.destroy()
       doc.destroy()
     }
   }, [activePageId])
 
+  const baseExtensions = [
+    StarterKit.configure({
+      history: false,
+      codeBlock: false, // disable default codeBlock to use lowlight
+    }),
+    Underline,
+    CodeBlockLowlight.configure({
+      lowlight,
+    }),
+    MathExtension.configure({
+      evaluation: true,
+    }),
+    Mention.configure({
+      HTMLAttributes: {
+        class: 'wiki-link',
+      },
+      suggestion,
+    }),
+    slashCommand.configure({
+      suggestion: slashSuggestion,
+    })
+  ];
+
   const editor = useEditor({
-    extensions: ydoc && provider ? [
-      StarterKit.configure({
-        history: false,
-      }),
+    extensions: ydoc ? [
+      ...baseExtensions,
       Collaboration.configure({
         document: ydoc,
       }),
-      CollaborationCursor.configure({
-        provider: provider,
-        user: provider.awareness.getLocalState().user,
-      })
-    ] : [],
+      ...(provider ? [
+        CollaborationCursor.configure({
+          provider: provider,
+          user: provider.awareness.getLocalState().user,
+        })
+      ] : [])
+    ] : [
+      ...baseExtensions
+    ],
     onUpdate: ({ editor }) => {
       if (activePageId) {
         if (editorTimeoutRef.current) {
@@ -153,6 +199,17 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
       reader.readAsDataURL(file)
     }
   }
+
+  // Handle editor click for wiki-links
+  const handleEditorClick = (e) => {
+    const target = e.target;
+    if (target.classList.contains('wiki-link')) {
+      const id = target.getAttribute('data-id');
+      if (id) {
+        setActivePageId(Number(id));
+      }
+    }
+  };
 
   if (!page || !editor) {
     return <div className="empty-state">Select or create a page</div>
@@ -238,7 +295,56 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
             />
           </div>
 
-          <EditorContent editor={editor} className="tiptap-editor" />
+          <div onClick={handleEditorClick}>
+            {editor && (
+              <BubbleMenu editor={editor} tippyOptions={{ duration: 100 }} className="bubble-menu">
+                <button
+                  onClick={() => editor.chain().focus().toggleBold().run()}
+                  className={editor.isActive('bold') ? 'is-active' : ''}
+                >
+                  <Bold size={16} />
+                </button>
+                <button
+                  onClick={() => editor.chain().focus().toggleItalic().run()}
+                  className={editor.isActive('italic') ? 'is-active' : ''}
+                >
+                  <Italic size={16} />
+                </button>
+                <button
+                  onClick={() => editor.chain().focus().toggleUnderline().run()}
+                  className={editor.isActive('underline') ? 'is-active' : ''}
+                >
+                  <UnderlineIcon size={16} />
+                </button>
+                <button
+                  onClick={() => editor.chain().focus().toggleStrike().run()}
+                  className={editor.isActive('strike') ? 'is-active' : ''}
+                >
+                  <Strikethrough size={16} />
+                </button>
+              </BubbleMenu>
+            )}
+            <EditorContent editor={editor} className="tiptap-editor" />
+          </div>
+          
+          <div className="backlinks-section">
+            <h3 className="backlinks-title">
+              <LinkIcon size={16} />
+              Backlinks
+            </h3>
+            {backlinks.length > 0 ? (
+              <ul className="backlinks-list">
+                {backlinks.map(p => (
+                  <li key={p.id} className="backlink-item" onClick={() => setActivePageId(p.id)}>
+                    <span className="backlink-emoji">{p.emoji || '📄'}</span>
+                    <span className="backlink-title">{p.title || 'Untitled'}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="backlinks-empty">No pages link to this page yet.</div>
+            )}
+          </div>
         </div>
       </div>
     </div>
