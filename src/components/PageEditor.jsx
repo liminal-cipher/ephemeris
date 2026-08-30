@@ -13,6 +13,7 @@ import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import { lowlight } from 'lowlight'
 import MathExtension from '@aarkue/tiptap-math-extension'
 import slashCommand from './editor/slashExtension'
+import TrimSelectionExtension from './editor/trimSelectionExtension'
 import { Menu, Trash2 } from 'lucide-react'
 import suggestion from './editor/suggestion'
 import slashSuggestion from './editor/slashSuggestion'
@@ -66,7 +67,8 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
     }),
     slashCommand.configure({
       suggestion: slashSuggestion,
-    })
+    }),
+    TrimSelectionExtension
   ];
 
   const editor = useEditor({
