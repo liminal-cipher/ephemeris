@@ -15,15 +15,13 @@ Ephemeris is the first cut at the substrate that would need: a workspace where p
 
 ## What It Does
 
-- Create pages from a sidebar and switch between them
-- Organize notes with hierarchical nested pages and find them via search
+- **Hierarchical Document Model:** Organize notes with infinitely nested sub-pages, drag-and-drop re-parenting, collapsible tree toggles, and interactive breadcrumbs.
 - **Collaborative Editing:** Edit notes in real-time with peers over WebRTC, without relying on a central backend.
+- **Unified Details Panel:** Access sub-pages and backlinks via a dockable panel (bottom or right sidebar) to maintain context without cluttering the editor.
 - **Graph View:** Visualize connections between pages linked via `[[wiki-link]]` syntax on an interactive 2D physics graph.
-- Write rich text through Tiptap's StarterKit: headings, lists, bold and italic, code blocks, blockquotes, driven by markdown-style input rules and keyboard shortcuts rather than a toolbar
-- Give a page an icon and a cover image, uploaded from disk and stored inline
-- Delete pages completely from the UI and IndexedDB
-- Persist every change automatically offline using CRDTs (`y-indexeddb`) and Dexie fallback snapshots.
-- Export the entire workspace to a JSON file and import it back for data portability
+- **Rich Text Editing:** Write using Tiptap's markdown-style input rules and keyboard shortcuts, complete with mathematical formulas (KaTeX), code blocks, and double-click whitespace trimming.
+- **Customization:** Assign pages an icon (from a full 1,484 Unicode catalog, uploaded images, or remote URLs) and a cover image, stored inline.
+- **Offline & Portable:** Persist every change automatically using CRDTs (`y-indexeddb`) and Dexie fallback snapshots. Export the entire workspace to JSON for true data portability.
 
 There is no sign-up, no server, and no network request required to write. Opening the app offline behaves exactly the same as opening it online.
 
@@ -74,15 +72,16 @@ Tests can be run with `npm run test`.
 
 ## Roadmap
 
-The shell of the app is complete with V3 refinements (CRDTs and Graph View). Future exploration will focus on maximizing the value of local-first notes:
-- **Workspace CRDT**: Move page creation, renaming, and sidebar tree metadata into a global Yjs document to make the entire workspace collaborative, not just the editor content.
+The shell of the app is complete with V3 refinements (Workspace CRDTs, unified panels, and Graph View). Future exploration will focus on maximizing the value of local-first notes:
+- **Performance Optimization**: Implement virtualized rendering for the sidebar tree to support workspaces scaling past thousands of notes smoothly.
+- **Enhanced Media Integration**: Support custom image URLs and Unsplash integrations for page covers alongside local file uploads.
+- **Multi-page Bulk Operations**: Enable dragging and re-parenting multi-selected notes simultaneously in the sidebar tree.
+- **Tiptap v3 Upgrade**: Transition to Tiptap 3.x ecosystem once its dependencies and collaboration APIs stabilize.
 - **Asynchronous Sync (Relay Server)**: Implement a lightweight encrypted relay (e.g. `y-websocket`) to allow peers to sync changes even if they aren't online at the same time.
-- **Performance Optimization**: Offload Dexie JSON snapshots to a Web Worker, or trigger them only on page unmount, to prevent main-thread stuttering during fast keystrokes.
-- **Block-level Interaction**: Build custom Node Views and drag handles in Tiptap to enable true Notion-style block drag-and-drop.
 
 ## Status
 
-Active. Local development resumed. Last updated 2026-08-25.
+Active. Local development resumed. Last updated 2026-08-30.
 
 ## License
 
