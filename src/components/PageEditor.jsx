@@ -39,20 +39,39 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
       return 'bottom'
     }
   })
-  const [rightPanelOpen, setRightPanelOpen] = useState(true)
+  
+  const [showDetailsPanel, setShowDetailsPanel] = useState(() => {
+    try {
+      return localStorage.getItem('ephemeris_show_details_panel') !== 'false'
+    } catch {
+      return true
+    }
+  })
+
+  const toggleDetailsPanel = () => {
+    setShowDetailsPanel(prev => {
+      const next = !prev
+      try {
+        localStorage.setItem('ephemeris_show_details_panel', String(next))
+      } catch (e) {
+        console.error(e)
+      }
+      showToast(next ? 'Details panel shown' : 'Details panel hidden', 'info', 1500)
+      return next
+    })
+  }
 
   const togglePanelsPosition = () => {
     const next = panelsPosition === 'bottom' ? 'right' : 'bottom'
     setPanelsPosition(next)
-    if (next === 'right') {
-      setRightPanelOpen(true)
-    }
+    setShowDetailsPanel(true)
     try {
       localStorage.setItem('ephemeris_panels_position', next)
+      localStorage.setItem('ephemeris_show_details_panel', 'true')
     } catch (e) {
       console.error(e)
     }
-    showToast(next === 'right' ? 'Moved panels to right sidebar' : 'Moved panels to bottom', 'info', 1500)
+    showToast(next === 'right' ? 'Moved details panel to right sidebar' : 'Moved details panel to bottom', 'info', 1500)
   }
   
   const page = useMemo(() => {
@@ -249,16 +268,21 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <button 
-            className={`icon-btn ${panelsPosition === 'right' && rightPanelOpen ? 'is-active' : ''}`}
-            onClick={panelsPosition === 'right' ? () => setRightPanelOpen(!rightPanelOpen) : togglePanelsPosition}
+            className={`icon-btn ${showDetailsPanel ? 'is-active' : ''}`}
+            onClick={toggleDetailsPanel}
             title={
-              panelsPosition === 'right' 
-                ? (rightPanelOpen ? 'Hide side panel' : 'Show side panel') 
-                : 'Move sub-pages & backlinks to right side panel'
+              showDetailsPanel 
+                ? 'Hide details panel (sub-pages & backlinks)' 
+                : 'Show details panel (sub-pages & backlinks)'
             }
-            aria-label="Toggle side panel"
+            aria-label={showDetailsPanel ? 'Hide details panel' : 'Show details panel'}
+            aria-expanded={showDetailsPanel}
           >
-            <PanelRight size={16} aria-hidden="true" />
+            {panelsPosition === 'right' ? (
+              <PanelRight size={16} aria-hidden="true" />
+            ) : (
+              <PanelBottom size={16} aria-hidden="true" />
+            )}
           </button>
           <button className="icon-btn" onClick={handleDeletePage} title="Delete Page" style={{ color: 'var(--text-secondary)' }} aria-label="Delete Page">
             <Trash2 size={16} aria-hidden="true" />
@@ -266,7 +290,7 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
         </div>
       </div>
 
-      <div className={`page-editor-layout ${panelsPosition === 'right' ? 'has-right-panel' : ''}`}>
+      <div className={`page-editor-layout ${panelsPosition === 'right' && showDetailsPanel ? 'has-right-panel' : ''}`}>
         <div className="editor-container">
           <div className="page-content">
             <PageHeader 
@@ -283,8 +307,30 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
               <EditorContent editor={editor} className="tiptap-editor" />
             </div>
             
-            {panelsPosition === 'bottom' && (
+            {panelsPosition === 'bottom' && showDetailsPanel && (
               <div className="bottom-panels-wrapper">
+                <div className="bottom-panels-header">
+                  <span className="bottom-panels-title">Page Details</span>
+                  <div className="bottom-panels-actions">
+                    <button 
+                      className="icon-btn-small" 
+                      onClick={togglePanelsPosition} 
+                      title="Move details panel to right side"
+                      aria-label="Move details panel to right side"
+                    >
+                      <PanelRight size={14} aria-hidden="true" />
+                    </button>
+                    <button 
+                      className="icon-btn-small" 
+                      onClick={() => setShowDetailsPanel(false)} 
+                      title="Hide details panel"
+                      aria-label="Hide details panel"
+                    >
+                      <X size={13} aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+
                 <SubPagesPanel 
                   activePageId={activePageId} 
                   allPages={allPages} 
@@ -302,7 +348,7 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
           </div>
         </div>
 
-        {panelsPosition === 'right' && rightPanelOpen && (
+        {panelsPosition === 'right' && showDetailsPanel && (
           <aside className="editor-right-sidebar" aria-label="Page details and backlinks">
             <div className="editor-right-sidebar-header">
               <span className="right-sidebar-title">Page Details</span>
@@ -310,16 +356,16 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
                 <button 
                   className="icon-btn-small" 
                   onClick={togglePanelsPosition} 
-                  title="Move panels to bottom of page"
-                  aria-label="Move panels to bottom"
+                  title="Move details panel to bottom of page"
+                  aria-label="Move details panel to bottom of page"
                 >
                   <PanelBottom size={14} aria-hidden="true" />
                 </button>
                 <button 
                   className="icon-btn-small" 
-                  onClick={() => setRightPanelOpen(false)} 
-                  title="Close side panel"
-                  aria-label="Close side panel"
+                  onClick={() => setShowDetailsPanel(false)} 
+                  title="Hide details panel"
+                  aria-label="Hide details panel"
                 >
                   <X size={13} aria-hidden="true" />
                 </button>
