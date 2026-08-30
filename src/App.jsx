@@ -11,7 +11,12 @@ function App() {
 
   return (
     <div className="app-container">
-      {sidebarOpen && <Sidebar onOpenGraph={() => setIsGraphViewOpen(true)} />}
+      {sidebarOpen && (
+        <Sidebar 
+          onOpenGraph={() => setIsGraphViewOpen(true)} 
+          onToggleSidebar={() => setSidebarOpen(false)} 
+        />
+      )}
       <div className="main-content">
         <PageEditor onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} sidebarOpen={sidebarOpen} />
       </div>

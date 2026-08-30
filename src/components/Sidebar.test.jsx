@@ -210,6 +210,17 @@ describe('Sidebar Component', () => {
       expect(moved.parentId).toBe('p1');
     });
   });
+
+  it('triggers onToggleSidebar when collapse button is clicked', async () => {
+    const handleToggle = vi.fn();
+    render(<Sidebar onToggleSidebar={handleToggle} />);
+
+    const collapseBtn = screen.getByLabelText('Collapse sidebar');
+    expect(collapseBtn).toBeInTheDocument();
+    fireEvent.click(collapseBtn);
+
+    expect(handleToggle).toHaveBeenCalledTimes(1);
+  });
 });
 
 
