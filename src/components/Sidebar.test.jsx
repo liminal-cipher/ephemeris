@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import Sidebar from './Sidebar';
-import { db } from '../db/db';
 import { useStore } from '../store/useStore';
+import { workspacePages, useWorkspaceStore, createWorkspacePage } from '../store/workspace';
 
 // Mock export/import
 vi.mock('../utils/exportImport', () => ({
@@ -11,8 +11,10 @@ vi.mock('../utils/exportImport', () => ({
 }));
 
 describe('Sidebar Component', () => {
-  beforeEach(async () => {
-    await db.pages.clear();
+  beforeEach(() => {
+    // Clear Yjs map
+    Array.from(workspacePages.keys()).forEach(key => workspacePages.delete(key));
+    useWorkspaceStore.setState({ isSynced: true, pages: {} });
     useStore.setState({ activePageId: null });
   });
 
@@ -21,11 +23,10 @@ describe('Sidebar Component', () => {
     expect(screen.getByText('My Workspace')).toBeInTheDocument();
   });
 
-  it('renders a list of pages from the database', async () => {
-    await db.pages.bulkAdd([
-      { title: 'Page 1', parentId: null, createdAt: 1, updatedAt: 1 },
-      { title: 'Page 2', parentId: null, createdAt: 2, updatedAt: 2 }
-    ]);
+  it('renders a list of pages from the workspace', async () => {
+    workspacePages.set('1', { title: 'Page 1', parentId: null, createdAt: 1, updatedAt: 1 });
+    workspacePages.set('2', { title: 'Page 2', parentId: null, createdAt: 2, updatedAt: 2 });
+    useWorkspaceStore.setState({ pages: workspacePages.toJSON() });
 
     render(<Sidebar />);
     
@@ -41,17 +42,16 @@ describe('Sidebar Component', () => {
     const newPageBtn = screen.getByText('New Page');
     fireEvent.click(newPageBtn);
     
-    await waitFor(async () => {
-      const count = await db.pages.count();
-      expect(count).toBe(1);
+    await waitFor(() => {
+      const keys = Array.from(workspacePages.keys());
+      expect(keys.length).toBe(1);
     });
   });
 
   it('filters pages based on search query', async () => {
-    await db.pages.bulkAdd([
-      { title: 'Apple', parentId: null, createdAt: 1, updatedAt: 1 },
-      { title: 'Banana', parentId: null, createdAt: 2, updatedAt: 2 }
-    ]);
+    workspacePages.set('1', { title: 'Apple', parentId: null, createdAt: 1, updatedAt: 1 });
+    workspacePages.set('2', { title: 'Banana', parentId: null, createdAt: 2, updatedAt: 2 });
+    useWorkspaceStore.setState({ pages: workspacePages.toJSON() });
 
     render(<Sidebar />);
     

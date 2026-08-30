@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { useEffect, useRef, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useStore } from '../store/useStore'
@@ -106,23 +106,34 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
     }
   }, [ydoc, provider])
 
+  const migratedPageIdsRef = useRef(new Set())
+
   useEffect(() => {
-    if (page) {
-      // Legacy data migration: If Yjs doc is empty but Dexie has content
-      if (editor && ydoc && isSynced) {
-        const dexiePage = dexiePages?.find(p => p.id === activePageId || p.id === Number(activePageId));
-        if (dexiePage && dexiePage.content) {
-          const fragment = ydoc.getXmlFragment('default')
-          if (fragment.length === 0) {
-            try {
-              const parsed = JSON.parse(dexiePage.content)
-              if (parsed && parsed.content && parsed.content.length > 0) {
-                editor.commands.setContent(parsed)
-              }
-            } catch(e) {
-               editor.commands.setContent(dexiePage.content)
+    if (page && editor && ydoc && isSynced) {
+      if (migratedPageIdsRef.current.has(activePageId)) {
+        return
+      }
+
+      const dexiePage = dexiePages?.find(p => p.id === activePageId || p.id === Number(activePageId))
+      if (dexiePage && dexiePage.content) {
+        const fragment = ydoc.getXmlFragment('default')
+        if (fragment.length === 0) {
+          try {
+            const parsed = JSON.parse(dexiePage.content)
+            const hasMeaningfulContent = parsed && Array.isArray(parsed.content) && parsed.content.some(block => {
+              if (block.type !== 'paragraph') return true
+              return Array.isArray(block.content) && block.content.length > 0
+            })
+
+            if (hasMeaningfulContent) {
+              editor.commands.setContent(parsed, false)
             }
+            migratedPageIdsRef.current.add(activePageId)
+          } catch (e) {
+            console.error('Failed to parse legacy page content:', e)
           }
+        } else {
+          migratedPageIdsRef.current.add(activePageId)
         }
       }
     }
