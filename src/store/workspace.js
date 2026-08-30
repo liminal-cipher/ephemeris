@@ -1,3 +1,4 @@
+import React, { useMemo } from 'react'
 import * as Y from 'yjs'
 import { WebrtcProvider } from 'y-webrtc'
 import { IndexeddbPersistence } from 'y-indexeddb'
@@ -15,21 +16,23 @@ export const workspaceProvider = new WebrtcProvider('ephemeris-workspace-room', 
   signaling: ['wss://signaling.yjs.dev', 'wss://y-webrtc-signaling-eu.herokuapp.com']
 })
 
-export const useWorkspaceStore = create((set, get) => ({
+export const useWorkspaceStore = create((set) => ({
   pages: {},
   isSynced: false,
   setPages: (pages) => set({ pages }),
-  setIsSynced: (isSynced) => set({ isSynced }),
-  
-  // Helper to get pages as array
-  getPagesArray: () => {
-    const pagesObj = get().pages;
-    return Object.keys(pagesObj).map(id => ({
+  setIsSynced: (isSynced) => set({ isSynced })
+}))
+
+// Custom hook to reactively subscribe to the list of pages
+export const usePagesList = () => {
+  const pagesObj = useWorkspaceStore(state => state.pages)
+  return useMemo(() => {
+    return Object.keys(pagesObj || {}).map(id => ({
       id,
       ...pagesObj[id]
-    }));
-  }
-}))
+    }))
+  }, [pagesObj])
+}
 
 // Observe changes and update React state
 workspacePages.observe(() => {
