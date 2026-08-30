@@ -15,6 +15,19 @@
   --sidebar-width: 280px;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Notion Dark Theme Variables */
+    --bg-color: #191919;
+    --sidebar-bg: #202020;
+    --text-main: #e6e6e5;
+    --text-muted: #9b9a97;
+    --hover-bg: rgba(255, 255, 255, 0.08);
+    --border-color: #2f2f2f;
+    --item-active-bg: rgba(255, 255, 255, 0.08);
+  }
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
