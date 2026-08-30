@@ -1,5 +1,4 @@
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '../db/db'
+import { useWorkspaceStore, createWorkspacePage } from '../store/workspace'
 import { useStore } from '../store/useStore'
 import { FileText, Plus, Download, Upload, Search, Network } from 'lucide-react'
 import { exportWorkspace, importWorkspace } from '../utils/exportImport'
@@ -7,21 +6,15 @@ import { useRef, useState, useEffect } from 'react'
 import './Sidebar.css'
 
 export default function Sidebar({ onOpenGraph }) {
-  const pages = useLiveQuery(() => db.pages.toArray())
+  const getPagesArray = useWorkspaceStore(state => state.getPagesArray)
+  const isSynced = useWorkspaceStore(state => state.isSynced)
+  const pages = getPagesArray()
   const { activePageId, setActivePageId } = useStore()
   const fileInputRef = useRef(null)
   const [searchQuery, setSearchQuery] = useState('')
 
-  const createNewPage = async (parentId = null) => {
-    const id = await db.pages.add({
-      title: '',
-      emoji: '',
-      coverImage: '',
-      content: '',
-      parentId: parentId,
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    })
+  const handleCreateNewPage = (parentId = null) => {
+    const id = createWorkspacePage(parentId)
     setActivePageId(id)
   }
 
@@ -42,12 +35,12 @@ export default function Sidebar({ onOpenGraph }) {
     }
   }
 
-  // Set first page active if none selected
+  // Set first page active if none selected and synced
   useEffect(() => {
-    if (pages?.length > 0 && !activePageId) {
+    if (isSynced && pages.length > 0 && !activePageId) {
       setActivePageId(pages[0].id)
     }
-  }, [pages, activePageId, setActivePageId])
+  }, [pages.length, activePageId, setActivePageId, isSynced])
 
   // Build tree for hierarchical rendering
   const buildTree = (pagesList) => {
@@ -77,7 +70,7 @@ export default function Sidebar({ onOpenGraph }) {
           <div className="item-actions">
             <button 
               className="icon-btn-small" 
-              onClick={(e) => { e.stopPropagation(); createNewPage(page.id); }}
+              onClick={(e) => { e.stopPropagation(); handleCreateNewPage(page.id); }}
               title="Add child page"
             >
               <Plus size={14} />
@@ -90,10 +83,10 @@ export default function Sidebar({ onOpenGraph }) {
   }
 
   const filteredPages = searchQuery 
-    ? pages?.filter(p => (p.title || 'Untitled').toLowerCase().includes(searchQuery.toLowerCase()))
+    ? pages.filter(p => (p.title || 'Untitled').toLowerCase().includes(searchQuery.toLowerCase()))
     : []
 
-  const tree = !searchQuery && pages ? buildTree(pages) : []
+  const tree = !searchQuery ? buildTree(pages) : []
 
   return (
     <div className="sidebar">
@@ -110,7 +103,9 @@ export default function Sidebar({ onOpenGraph }) {
         </div>
       </div>
       <div className="sidebar-content">
-        {searchQuery ? (
+        {!isSynced ? (
+          <div className="empty-state" style={{ padding: '1rem', fontSize: '0.85rem' }}>Loading workspace...</div>
+        ) : searchQuery ? (
           filteredPages.length > 0 ? (
             filteredPages.map(page => (
               <div 
@@ -130,7 +125,7 @@ export default function Sidebar({ onOpenGraph }) {
         )}
       </div>
       <div className="sidebar-footer" style={{ flexDirection: 'column', gap: '8px' }}>
-        <button className="new-page-btn" onClick={() => createNewPage(null)}>
+        <button className="new-page-btn" onClick={() => handleCreateNewPage(null)}>
           <Plus size={16} />
           New Page
         </button>

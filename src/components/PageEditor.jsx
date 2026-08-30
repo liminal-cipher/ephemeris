@@ -2,7 +2,8 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useStore } from '../store/useStore'
-import { useEditor, EditorContent, BubbleMenu } from '@tiptap/react'
+import { useWorkspaceStore, deleteWorkspacePage } from '../store/workspace'
+import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor'
@@ -12,87 +13,40 @@ import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import { lowlight } from 'lowlight'
 import MathExtension from '@aarkue/tiptap-math-extension'
 import slashCommand from './editor/slashExtension'
-import * as Y from 'yjs'
-import { WebrtcProvider } from 'y-webrtc'
-import { IndexeddbPersistence } from 'y-indexeddb'
-import { Image as ImageIcon, Smile, Menu, Trash2, Link as LinkIcon, Bold, Italic, Underline as UnderlineIcon, Strikethrough } from 'lucide-react'
+import { Menu, Trash2 } from 'lucide-react'
 import suggestion from './editor/suggestion'
 import slashSuggestion from './editor/slashSuggestion'
-import { extractLinksFromPages } from '../utils/linkParser'
 import 'katex/dist/katex.min.css'
 import './PageEditor.css'
+
+import { useEditorSync } from './editor/useEditorSync'
+import PageHeader from './editor/PageHeader'
+import BacklinksPanel from './editor/BacklinksPanel'
+import EditorToolbar from './editor/EditorToolbar'
 
 export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   const { activePageId, setActivePageId } = useStore()
   
-  const allPages = useLiveQuery(() => db.pages.toArray(), [])
+  const getPagesArray = useWorkspaceStore(state => state.getPagesArray)
+  const allPages = getPagesArray()
   
   const page = useMemo(() => {
     return allPages ? allPages.find(p => p.id === activePageId) : null
   }, [allPages, activePageId])
 
-  const backlinks = useMemo(() => {
-    if (!allPages || !activePageId) return []
-    const { edges } = extractLinksFromPages(allPages)
-    const incomingEdgeSourceIds = edges.filter(e => e.target === activePageId).map(e => e.source)
-    const uniqueSourceIds = [...new Set(incomingEdgeSourceIds)]
-    return uniqueSourceIds.map(id => allPages.find(p => p.id === id)).filter(Boolean)
-  }, [allPages, activePageId])
+  // Get content from Dexie for legacy fallback and backlinks
+  const dexiePages = useLiveQuery(() => db.pages.toArray(), [])
 
-  const [title, setTitle] = useState('')
-  const [emoji, setEmoji] = useState('')
-  const [coverImage, setCoverImage] = useState('')
   const titleInputRef = useRef(null)
   const editorTimeoutRef = useRef(null)
 
-  const [ydoc, setYdoc] = useState(null)
-  const [provider, setProvider] = useState(null)
-  const [isSynced, setIsSynced] = useState(false)
+  const { ydoc, provider, isSynced } = useEditorSync(activePageId)
 
   useEffect(() => {
     if (page && (page.title === '' || !page.title) && titleInputRef.current) {
       setTimeout(() => titleInputRef.current?.focus(), 50)
     }
   }, [activePageId, page?.title])
-
-  useEffect(() => {
-    setIsSynced(false)
-    if (!activePageId) {
-      setProvider(null)
-      setYdoc(null)
-      return
-    }
-
-    const doc = new Y.Doc()
-    
-    // Offline persistence
-    const persistence = new IndexeddbPersistence(`ephemeris-page-${activePageId}`, doc)
-    
-    persistence.on('synced', () => {
-      setIsSynced(true)
-    })
-    
-    // P2P sync (Temporarily disabled until Track D to prevent public signaling server console errors)
-    /*
-    const webrtcProvider = new WebrtcProvider(`ephemeris-room-${activePageId}`, doc, {
-      signaling: ['wss://signaling.yjs.dev', 'wss://y-webrtc-signaling-eu.herokuapp.com']
-    })
-
-    const colors = ['#958DF1', '#F98181', '#FBCE76', '#8B5CF6', '#3B82F6', '#10B981']
-    webrtcProvider.awareness.setLocalStateField('user', {
-      name: `User ${Math.floor(Math.random() * 1000)}`,
-      color: colors[Math.floor(Math.random() * colors.length)],
-    })
-    */
-
-    setYdoc(doc)
-    setProvider(null)
-
-    return () => {
-      // webrtcProvider?.destroy()
-      doc.destroy()
-    }
-  }, [activePageId])
 
   const baseExtensions = [
     StarterKit.configure({
@@ -137,13 +91,16 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
         if (editorTimeoutRef.current) {
           clearTimeout(editorTimeoutRef.current)
         }
-        // Snapshot to Dexie for GraphView and local search
+        // Snapshot to Dexie for GraphView, local search, and backlinks parsing
         const content = JSON.stringify(editor.getJSON())
-        editorTimeoutRef.current = setTimeout(() => {
-          db.pages.update(activePageId, { 
+        editorTimeoutRef.current = setTimeout(async () => {
+          const numUpdated = await db.pages.update(activePageId, { 
             content: content,
             updatedAt: Date.now()
           })
+          if (numUpdated === 0) {
+            await db.pages.add({ id: activePageId, content, updatedAt: Date.now() })
+          }
         }, 500)
       }
     }
@@ -151,52 +108,30 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
 
   useEffect(() => {
     if (page) {
-      setTitle(page.title || '')
-      setEmoji(page.emoji || '')
-      setCoverImage(page.coverImage || '')
-      
       // Legacy data migration: If Yjs doc is empty but Dexie has content
-      if (editor && ydoc && isSynced && page.content) {
-        const fragment = ydoc.getXmlFragment('default')
-        if (fragment.length === 0) {
-          try {
-            const parsed = JSON.parse(page.content)
-            if (parsed && parsed.content && parsed.content.length > 0) {
-              editor.commands.setContent(parsed)
+      if (editor && ydoc && isSynced) {
+        const dexiePage = dexiePages?.find(p => p.id === activePageId || p.id === Number(activePageId));
+        if (dexiePage && dexiePage.content) {
+          const fragment = ydoc.getXmlFragment('default')
+          if (fragment.length === 0) {
+            try {
+              const parsed = JSON.parse(dexiePage.content)
+              if (parsed && parsed.content && parsed.content.length > 0) {
+                editor.commands.setContent(parsed)
+              }
+            } catch(e) {
+               editor.commands.setContent(dexiePage.content)
             }
-          } catch(e) {
-             editor.commands.setContent(page.content)
           }
         }
       }
     }
-  }, [page, editor, ydoc, isSynced])
+  }, [page, editor, ydoc, isSynced, dexiePages, activePageId])
 
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
-  const EMOJI_LIST = ['📄', '💡', '📝', '🚀', '⭐️', '📌', '📚', '🛠️', '👋', '🎯', '✨', '🔥']
-
-  const updatePage = (changes) => {
-    if (activePageId) {
-      db.pages.update(activePageId, { ...changes, updatedAt: Date.now() })
-    }
-  }
-
-  const handleDeletePage = async () => {
+  const handleDeletePage = () => {
     if (window.confirm('Are you sure you want to delete this page?')) {
-      await db.pages.delete(activePageId)
+      deleteWorkspacePage(activePageId)
       setActivePageId(null)
-    }
-  }
-
-  const handleCoverUpload = (e) => {
-    const file = e.target.files[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        const base64 = reader.result
-        updatePage({ coverImage: base64 })
-      }
-      reader.readAsDataURL(file)
     }
   }
 
@@ -206,7 +141,7 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
     if (target.classList.contains('wiki-link')) {
       const id = target.getAttribute('data-id');
       if (id) {
-        setActivePageId(Number(id));
+        setActivePageId(id);
       }
     }
   };
@@ -220,131 +155,39 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
       <div className="top-nav" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {!sidebarOpen && (
-            <button className="icon-btn" onClick={onToggleSidebar}>
-              <Menu size={20} />
+            <button className="icon-btn" onClick={onToggleSidebar} aria-label="Open sidebar" aria-expanded={sidebarOpen}>
+              <Menu size={20} aria-hidden="true" />
             </button>
           )}
-          <div className="breadcrumbs">{page.title || 'Untitled'}</div>
+          <div className="breadcrumbs" aria-live="polite">{page.title || 'Untitled'}</div>
         </div>
-        <button className="icon-btn" onClick={handleDeletePage} title="Delete Page" style={{ color: 'var(--text-secondary)' }}>
-          <Trash2 size={16} />
+        <button className="icon-btn" onClick={handleDeletePage} title="Delete Page" style={{ color: 'var(--text-secondary)' }} aria-label="Delete Page">
+          <Trash2 size={16} aria-hidden="true" />
         </button>
       </div>
 
       <div className="editor-container">
-        {coverImage && (
-          <div className="cover-image-container">
-            <img src={coverImage} alt="Cover" className="cover-image" />
-            <button className="change-cover-btn" onClick={() => updatePage({coverImage: ''})}>Remove Cover</button>
-          </div>
-        )}
-        
         <div className="page-content">
-          {!coverImage && (
-            <div className="page-actions-top">
-              <label className="page-action-btn">
-                <ImageIcon size={16} /> Add cover
-                <input type="file" accept="image/*" hidden onChange={handleCoverUpload} />
-              </label>
-              {!emoji && (
-                <button className="page-action-btn" onClick={() => setShowEmojiPicker(true)}>
-                  <Smile size={16} /> Add icon
-                </button>
-              )}
-            </div>
-          )}
+          <PageHeader 
+            activePageId={activePageId}
+            title={page.title || ''}
+            emoji={page.emoji || ''}
+            coverImage={page.coverImage || ''}
+            titleInputRef={titleInputRef}
+            editor={editor}
+          />
 
-          <div className="page-header" style={{ position: 'relative' }}>
-            {emoji && (
-              <div className="page-emoji" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
-                {emoji}
-              </div>
-            )}
-            {showEmojiPicker && (
-              <div className="emoji-picker-popover">
-                <div className="emoji-grid">
-                  {EMOJI_LIST.map(em => (
-                    <button key={em} className="emoji-btn" onClick={() => { updatePage({ emoji: em }); setShowEmojiPicker(false); }}>
-                      {em}
-                    </button>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '8px' }}>
-                  <button className="emoji-picker-action" onClick={() => { updatePage({ emoji: '' }); setShowEmojiPicker(false); }}>Remove</button>
-                  <button className="emoji-picker-action" onClick={() => setShowEmojiPicker(false)}>Close</button>
-                </div>
-              </div>
-            )}
-            <input 
-              ref={titleInputRef}
-              className="page-title-input" 
-              value={title} 
-              onChange={(e) => {
-                setTitle(e.target.value)
-                updatePage({ title: e.target.value })
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  if (editor) {
-                    editor.commands.focus()
-                  }
-                }
-              }}
-              placeholder="Untitled"
-            />
-          </div>
-
-          <div onClick={handleEditorClick}>
-            {editor && (
-              <BubbleMenu editor={editor} tippyOptions={{ duration: 100 }} className="bubble-menu">
-                <button
-                  onClick={() => editor.chain().focus().toggleBold().run()}
-                  className={editor.isActive('bold') ? 'is-active' : ''}
-                >
-                  <Bold size={16} />
-                </button>
-                <button
-                  onClick={() => editor.chain().focus().toggleItalic().run()}
-                  className={editor.isActive('italic') ? 'is-active' : ''}
-                >
-                  <Italic size={16} />
-                </button>
-                <button
-                  onClick={() => editor.chain().focus().toggleUnderline().run()}
-                  className={editor.isActive('underline') ? 'is-active' : ''}
-                >
-                  <UnderlineIcon size={16} />
-                </button>
-                <button
-                  onClick={() => editor.chain().focus().toggleStrike().run()}
-                  className={editor.isActive('strike') ? 'is-active' : ''}
-                >
-                  <Strikethrough size={16} />
-                </button>
-              </BubbleMenu>
-            )}
+          <div onClick={handleEditorClick} role="textbox" aria-label="Rich text editor">
+            <EditorToolbar editor={editor} />
             <EditorContent editor={editor} className="tiptap-editor" />
           </div>
           
-          <div className="backlinks-section">
-            <h3 className="backlinks-title">
-              <LinkIcon size={16} />
-              Backlinks
-            </h3>
-            {backlinks.length > 0 ? (
-              <ul className="backlinks-list">
-                {backlinks.map(p => (
-                  <li key={p.id} className="backlink-item" onClick={() => setActivePageId(p.id)}>
-                    <span className="backlink-emoji">{p.emoji || '📄'}</span>
-                    <span className="backlink-title">{p.title || 'Untitled'}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="backlinks-empty">No pages link to this page yet.</div>
-            )}
-          </div>
+          <BacklinksPanel 
+            dexiePages={dexiePages} 
+            allPages={allPages} 
+            activePageId={activePageId} 
+            setActivePageId={setActivePageId} 
+          />
         </div>
       </div>
     </div>
