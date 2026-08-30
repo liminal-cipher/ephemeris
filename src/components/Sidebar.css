@@ -7,12 +7,33 @@
   height: 100%;
 }
 .sidebar-header {
-  padding: 1rem;
+  padding: 0.75rem 1rem;
   font-weight: 600;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+.sidebar-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sidebar-collapse-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.sidebar-collapse-btn:hover {
+  background-color: var(--hover-bg);
+  color: var(--text-main);
 }
 .workspace-name {
   font-size: 0.95rem;

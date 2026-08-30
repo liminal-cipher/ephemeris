@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useStore } from '../store/useStore'
@@ -14,7 +14,7 @@ import { lowlight } from 'lowlight'
 import MathExtension from '@aarkue/tiptap-math-extension'
 import slashCommand from './editor/slashExtension'
 import TrimSelectionExtension from './editor/trimSelectionExtension'
-import { Menu, Trash2 } from 'lucide-react'
+import { Menu, Trash2, PanelRight, ArrowDownToLine, X } from 'lucide-react'
 import suggestion from './editor/suggestion'
 import slashSuggestion from './editor/slashSuggestion'
 import 'katex/dist/katex.min.css'
@@ -31,6 +31,29 @@ import { showConfirm, showToast } from '../store/dialogStore'
 export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   const { activePageId, setActivePageId } = useStore()
   const allPages = usePagesList()
+
+  const [panelsPosition, setPanelsPosition] = useState(() => {
+    try {
+      return localStorage.getItem('ephemeris_panels_position') || 'bottom'
+    } catch {
+      return 'bottom'
+    }
+  })
+  const [rightPanelOpen, setRightPanelOpen] = useState(true)
+
+  const togglePanelsPosition = () => {
+    const next = panelsPosition === 'bottom' ? 'right' : 'bottom'
+    setPanelsPosition(next)
+    if (next === 'right') {
+      setRightPanelOpen(true)
+    }
+    try {
+      localStorage.setItem('ephemeris_panels_position', next)
+    } catch (e) {
+      console.error(e)
+    }
+    showToast(next === 'right' ? 'Moved panels to right sidebar' : 'Moved panels to bottom', 'info', 1500)
+  }
   
   const page = useMemo(() => {
     return allPages ? allPages.find(p => p.id === activePageId) : null
@@ -223,40 +246,102 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
             ))}
           </nav>
         </div>
-        <button className="icon-btn" onClick={handleDeletePage} title="Delete Page" style={{ color: 'var(--text-secondary)' }} aria-label="Delete Page">
-          <Trash2 size={16} aria-hidden="true" />
-        </button>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <button 
+            className={`icon-btn ${panelsPosition === 'right' && rightPanelOpen ? 'is-active' : ''}`}
+            onClick={panelsPosition === 'right' ? () => setRightPanelOpen(!rightPanelOpen) : togglePanelsPosition}
+            title={
+              panelsPosition === 'right' 
+                ? (rightPanelOpen ? 'Hide side panel' : 'Show side panel') 
+                : 'Move sub-pages & backlinks to right side panel'
+            }
+            aria-label="Toggle side panel"
+          >
+            <PanelRight size={16} aria-hidden="true" />
+          </button>
+          <button className="icon-btn" onClick={handleDeletePage} title="Delete Page" style={{ color: 'var(--text-secondary)' }} aria-label="Delete Page">
+            <Trash2 size={16} aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
-      <div className="editor-container">
-        <div className="page-content">
-          <PageHeader 
-            activePageId={activePageId}
-            title={page.title || ''}
-            emoji={page.emoji || ''}
-            coverImage={page.coverImage || ''}
-            titleInputRef={titleInputRef}
-            editor={editor}
-          />
+      <div className={`page-editor-layout ${panelsPosition === 'right' ? 'has-right-panel' : ''}`}>
+        <div className="editor-container">
+          <div className="page-content">
+            <PageHeader 
+              activePageId={activePageId}
+              title={page.title || ''}
+              emoji={page.emoji || ''}
+              coverImage={page.coverImage || ''}
+              titleInputRef={titleInputRef}
+              editor={editor}
+            />
 
-          <div onClick={handleEditorClick} role="textbox" aria-label="Rich text editor">
-            <EditorToolbar editor={editor} />
-            <EditorContent editor={editor} className="tiptap-editor" />
+            <div onClick={handleEditorClick} role="textbox" aria-label="Rich text editor">
+              <EditorToolbar editor={editor} />
+              <EditorContent editor={editor} className="tiptap-editor" />
+            </div>
+            
+            {panelsPosition === 'bottom' && (
+              <div className="bottom-panels-wrapper">
+                <SubPagesPanel 
+                  activePageId={activePageId} 
+                  allPages={allPages} 
+                  setActivePageId={setActivePageId} 
+                />
+
+                <BacklinksPanel 
+                  dexiePages={dexiePages} 
+                  allPages={allPages} 
+                  activePageId={activePageId} 
+                  setActivePageId={setActivePageId} 
+                />
+              </div>
+            )}
           </div>
-          
-          <SubPagesPanel 
-            activePageId={activePageId} 
-            allPages={allPages} 
-            setActivePageId={setActivePageId} 
-          />
-
-          <BacklinksPanel 
-            dexiePages={dexiePages} 
-            allPages={allPages} 
-            activePageId={activePageId} 
-            setActivePageId={setActivePageId} 
-          />
         </div>
+
+        {panelsPosition === 'right' && rightPanelOpen && (
+          <aside className="editor-right-sidebar" aria-label="Page details and backlinks">
+            <div className="editor-right-sidebar-header">
+              <span className="right-sidebar-title">Page Details</span>
+              <div className="right-sidebar-actions">
+                <button 
+                  className="icon-btn-small" 
+                  onClick={togglePanelsPosition} 
+                  title="Dock panels to bottom of page"
+                  aria-label="Dock panels to bottom"
+                >
+                  <ArrowDownToLine size={13} aria-hidden="true" />
+                </button>
+                <button 
+                  className="icon-btn-small" 
+                  onClick={() => setRightPanelOpen(false)} 
+                  title="Close side panel"
+                  aria-label="Close side panel"
+                >
+                  <X size={13} aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="editor-right-sidebar-content">
+              <SubPagesPanel 
+                activePageId={activePageId} 
+                allPages={allPages} 
+                setActivePageId={setActivePageId} 
+              />
+
+              <BacklinksPanel 
+                dexiePages={dexiePages} 
+                allPages={allPages} 
+                activePageId={activePageId} 
+                setActivePageId={setActivePageId} 
+              />
+            </div>
+          </aside>
+        )}
       </div>
     </div>
   )

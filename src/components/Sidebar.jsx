@@ -1,7 +1,7 @@
 import { usePagesList, useWorkspaceStore, createWorkspacePage, updateWorkspacePage, deleteWorkspacePage } from '../store/workspace'
 import { useStore } from '../store/useStore'
 import { showConfirm, showToast } from '../store/dialogStore'
-import { FileText, Plus, Download, Upload, Search, Network, Trash2, X, ChevronRight, ChevronDown } from 'lucide-react'
+import { FileText, Plus, Download, Upload, Search, Network, Trash2, X, ChevronRight, ChevronDown, ChevronsLeft } from 'lucide-react'
 import { exportWorkspace, importWorkspace } from '../utils/exportImport'
 import { useRef, useState, useEffect } from 'react'
 import PageIcon from './common/PageIcon'
@@ -19,7 +19,7 @@ function isDescendant(parentCandidateId, targetId, pagesList) {
   return false
 }
 
-export default function Sidebar({ onOpenGraph }) {
+export default function Sidebar({ onOpenGraph, onToggleSidebar }) {
   const pages = usePagesList()
   const isSynced = useWorkspaceStore(state => state.isSynced)
   const { activePageId, setActivePageId } = useStore()
@@ -318,7 +318,19 @@ export default function Sidebar({ onOpenGraph }) {
   return (
     <div className="sidebar">
       <div className="sidebar-header">
-        <div className="workspace-name">My Workspace</div>
+        <div className="sidebar-header-top">
+          <div className="workspace-name">My Workspace</div>
+          {onToggleSidebar && (
+            <button 
+              className="sidebar-collapse-btn" 
+              onClick={onToggleSidebar}
+              title="Collapse sidebar"
+              aria-label="Collapse sidebar"
+            >
+              <ChevronsLeft size={16} aria-hidden="true" />
+            </button>
+          )}
+        </div>
         <div className="search-bar">
           <Search size={14} style={{ color: 'var(--text-muted)' }} />
           <input 
