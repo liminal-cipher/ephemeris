@@ -14,7 +14,7 @@ import { lowlight } from 'lowlight'
 import MathExtension from '@aarkue/tiptap-math-extension'
 import slashCommand from './editor/slashExtension'
 import TrimSelectionExtension from './editor/trimSelectionExtension'
-import { Menu, Trash2, PanelRight, ArrowDownToLine, X } from 'lucide-react'
+import { Menu, Trash2, PanelRight, PanelBottom, X } from 'lucide-react'
 import suggestion from './editor/suggestion'
 import slashSuggestion from './editor/slashSuggestion'
 import 'katex/dist/katex.min.css'
@@ -310,10 +310,10 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
                 <button 
                   className="icon-btn-small" 
                   onClick={togglePanelsPosition} 
-                  title="Dock panels to bottom of page"
-                  aria-label="Dock panels to bottom"
+                  title="Move panels to bottom of page"
+                  aria-label="Move panels to bottom"
                 >
-                  <ArrowDownToLine size={13} aria-hidden="true" />
+                  <PanelBottom size={14} aria-hidden="true" />
                 </button>
                 <button 
                   className="icon-btn-small" 
