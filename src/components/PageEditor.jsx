@@ -25,8 +25,8 @@ import PageHeader from './editor/PageHeader'
 import BacklinksPanel from './editor/BacklinksPanel'
 import EditorToolbar from './editor/EditorToolbar'
 import SubPagesPanel from './editor/SubPagesPanel'
-
 import PageIcon from './common/PageIcon'
+import { showConfirm, showToast } from '../store/dialogStore'
 
 export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   const { activePageId, setActivePageId } = useStore()
@@ -36,7 +36,6 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
     return allPages ? allPages.find(p => p.id === activePageId) : null
   }, [allPages, activePageId])
 
-  // Compute hierarchical breadcrumbs chain
   const breadcrumbs = useMemo(() => {
     if (!page || !allPages) return []
     const trail = []
@@ -169,10 +168,19 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   }, [page, editor, ydoc, isSynced, dexiePages, activePageId])
 
   const handleDeletePage = () => {
-    if (window.confirm('Are you sure you want to delete this page?')) {
-      deleteWorkspacePage(activePageId)
-      setActivePageId(null)
-    }
+    const pageTitle = page?.title || 'Untitled'
+    showConfirm({
+      title: 'Delete Page',
+      message: `Are you sure you want to delete "${pageTitle}"? Any sub-pages will also be removed.`,
+      confirmText: 'Delete',
+      isDanger: true,
+      showNeverAskKey: 'ephemeris_skip_delete_confirm',
+      onConfirm: () => {
+        deleteWorkspacePage(activePageId)
+        setActivePageId(null)
+        showToast('Page deleted', 'info', 2000)
+      }
+    })
   }
 
   // Handle editor click for wiki-links
