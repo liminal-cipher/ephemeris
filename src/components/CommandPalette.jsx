@@ -1,8 +1,41 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../db/db';
 import { usePagesList } from '../store/workspace';
 import { useStore } from '../store/useStore';
+import { extractTextFromJson } from '../utils/linkParser';
 import { FileText, Search } from 'lucide-react';
 import './CommandPalette.css';
+
+function HighlightText({ text, query }) {
+  if (!query || !text) return <>{text}</>;
+  const trimmed = query.trim();
+  if (!trimmed) return <>{text}</>;
+
+  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const parts = String(text).split(new RegExp(`(${escaped})`, 'gi'));
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.toLowerCase() === trimmed.toLowerCase() ? (
+          <strong key={i} className="search-highlight">{part}</strong>
+        ) : (
+          part
+        )
+      )}
+    </>
+  );
+}
+
+function getPlainText(contentStr) {
+  if (!contentStr) return '';
+  try {
+    const json = JSON.parse(contentStr);
+    return extractTextFromJson(json).replace(/\s+/g, ' ').trim();
+  } catch {
+    return typeof contentStr === 'string' ? contentStr.replace(/\s+/g, ' ').trim() : '';
+  }
+}
 
 export default function CommandPalette() {
   const [isOpen, setIsOpen] = useState(false);
@@ -12,22 +45,58 @@ export default function CommandPalette() {
   
   const setActivePageId = useStore((state) => state.setActivePageId);
   const pages = usePagesList();
+  const dexiePages = useLiveQuery(() => db.pages.toArray(), []) || [];
 
-  // Filter pages by title or emoji
-  const filteredPages = useMemo(() => {
+  // Filter pages by title, emoji, and content
+  const filteredResults = useMemo(() => {
     const trimmed = query.trim().toLowerCase();
-    if (!trimmed) return pages;
-    return pages.filter(page => {
-      const title = (page.title || 'Untitled').toLowerCase();
+
+    return pages.map(page => {
+      const dexiePage = dexiePages.find(d => d.id === page.id || d.id === Number(page.id));
+      const plainText = getPlainText(dexiePage?.content);
+      const title = page.title || 'Untitled';
       const emoji = page.emoji || '';
-      return title.includes(trimmed) || emoji.includes(trimmed);
-    });
-  }, [pages, query]);
+
+      if (!trimmed) {
+        return {
+          ...page,
+          title,
+          snippet: plainText ? (plainText.slice(0, 90) + (plainText.length > 90 ? '...' : '')) : '',
+          isContentMatch: false
+        };
+      }
+
+      const titleMatch = title.toLowerCase().includes(trimmed);
+      const emojiMatch = emoji.toLowerCase().includes(trimmed);
+      const contentIndex = plainText.toLowerCase().indexOf(trimmed);
+      const contentMatch = contentIndex !== -1;
+
+      if (!titleMatch && !emojiMatch && !contentMatch) {
+        return null;
+      }
+
+      let snippet = '';
+      if (contentMatch) {
+        const start = Math.max(0, contentIndex - 30);
+        const end = Math.min(plainText.length, contentIndex + trimmed.length + 55);
+        snippet = (start > 0 ? '...' : '') + plainText.slice(start, end) + (end < plainText.length ? '...' : '');
+      } else if (plainText) {
+        snippet = plainText.slice(0, 90) + (plainText.length > 90 ? '...' : '');
+      }
+
+      return {
+        ...page,
+        title,
+        snippet,
+        isContentMatch: contentMatch && !titleMatch
+      };
+    }).filter(Boolean);
+  }, [pages, dexiePages, query]);
 
   // Reset index when query or filtered results change
   useEffect(() => {
     setSelectedIndex(0);
-  }, [query, filteredPages.length]);
+  }, [query, filteredResults.length]);
 
   // Global shortcut (Ctrl+K / Cmd+K)
   useEffect(() => {
@@ -62,13 +131,13 @@ export default function CommandPalette() {
   const handleKeyDown = (e) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedIndex(prev => (prev < filteredPages.length - 1 ? prev + 1 : 0));
+      setSelectedIndex(prev => (prev < filteredResults.length - 1 ? prev + 1 : 0));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setSelectedIndex(prev => (prev > 0 ? prev - 1 : filteredPages.length - 1));
+      setSelectedIndex(prev => (prev > 0 ? prev - 1 : filteredResults.length - 1));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const selectedPage = filteredPages[selectedIndex];
+      const selectedPage = filteredResults[selectedIndex];
       if (selectedPage) {
         handleSelectPage(selectedPage.id);
       }
@@ -90,7 +159,7 @@ export default function CommandPalette() {
           <input
             ref={inputRef}
             className="command-palette-input"
-            placeholder="Search pages by title..."
+            placeholder="Search pages by title or content..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -99,22 +168,35 @@ export default function CommandPalette() {
           />
         </div>
         <ul className="command-palette-results" role="listbox">
-          {filteredPages.length > 0 ? (
-            filteredPages.map((page, index) => (
+          {filteredResults.length > 0 ? (
+            filteredResults.map((item, index) => (
               <li
-                key={page.id}
+                key={item.id}
                 role="option"
                 aria-selected={index === selectedIndex}
                 className={index === selectedIndex ? 'selected' : ''}
-                onClick={() => handleSelectPage(page.id)}
+                onClick={() => handleSelectPage(item.id)}
                 onMouseEnter={() => setSelectedIndex(index)}
               >
-                <span className="emoji" aria-hidden="true">{page.emoji || <FileText size={16} />}</span>
-                <span className="title">{page.title || 'Untitled'}</span>
+                <span className="command-palette-item-icon" aria-hidden="true">
+                  {item.emoji || <FileText size={16} />}
+                </span>
+                <div className="command-palette-item-details">
+                  <div className="command-palette-item-title">
+                    <HighlightText text={item.title} query={query} />
+                  </div>
+                  {item.snippet && (
+                    <div className="command-palette-item-snippet">
+                      <HighlightText text={item.snippet} query={query} />
+                    </div>
+                  )}
+                </div>
               </li>
             ))
           ) : (
-            <div className="command-palette-empty" role="status">No pages found matching &ldquo;{query}&rdquo;</div>
+            <div className="command-palette-empty" role="status">
+              No pages found matching &ldquo;{query}&rdquo;
+            </div>
           )}
         </ul>
       </div>
