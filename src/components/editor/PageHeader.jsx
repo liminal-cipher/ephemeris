@@ -17,8 +17,9 @@ function extractFirstEmoji(str) {
 
 export default function PageHeader({ activePageId, title, emoji, coverImage, titleInputRef, editor }) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [mainTab, setMainTab] = useState('emojis') // 'emojis' | 'custom'
   const [emojiSearch, setEmojiSearch] = useState('')
-  const [activeCategory, setActiveCategory] = useState('all')
+  const [activeCategory, setActiveCategory] = useState('smileys')
   const emojiInputRef = useRef(null)
 
   // Custom Saved Emoji Library from localStorage
@@ -80,7 +81,8 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
   useEffect(() => {
     if (showEmojiPicker) {
       setEmojiSearch('')
-      setActiveCategory('all')
+      setMainTab('emojis')
+      setActiveCategory('smileys')
       const timer = setTimeout(() => {
         emojiInputRef.current?.focus()
       }, 50)
@@ -96,29 +98,18 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
     return '';
   }, [emojiSearch]);
 
-  // Filtered categorized emojis
-  const displayCategories = useMemo(() => {
-    const trimmed = emojiSearch.trim()
-    if (trimmed) {
-      const allPool = [...customLibrary, ...ALL_EMOJIS];
-      const matched = [...new Set(allPool.filter(em => em.includes(trimmed)))];
-      return [{ name: 'Search Results', id: 'search', emojis: matched }];
-    }
+  // Current category data
+  const currentCategoryData = useMemo(() => {
+    return EMOJI_CATEGORIES.find(cat => cat.id === activeCategory) || EMOJI_CATEGORIES[0];
+  }, [activeCategory]);
 
-    if (activeCategory === 'saved') {
-      return [{ name: 'Custom Saved Library', id: 'saved', emojis: customLibrary }];
-    }
-
-    if (activeCategory === 'all') {
-      const base = [];
-      if (customLibrary.length > 0) {
-        base.push({ name: 'Custom Saved Library', id: 'saved', emojis: customLibrary, isCustom: true });
-      }
-      return [...base, ...EMOJI_CATEGORIES];
-    }
-
-    return EMOJI_CATEGORIES.filter(cat => cat.id === activeCategory);
-  }, [emojiSearch, activeCategory, customLibrary]);
+  // Filtered emojis for search
+  const searchResults = useMemo(() => {
+    const trimmed = emojiSearch.trim();
+    if (!trimmed) return null;
+    const allPool = [...customLibrary, ...ALL_EMOJIS];
+    return [...new Set(allPool.filter(em => em.includes(trimmed)))];
+  }, [emojiSearch, customLibrary]);
 
   return (
     <>
@@ -170,13 +161,32 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
         
         {showEmojiPicker && (
           <div className="emoji-picker-popover" role="dialog" aria-label="Emoji picker">
+            <div className="emoji-main-tabs" role="tablist">
+              <button
+                role="tab"
+                aria-selected={mainTab === 'emojis'}
+                className={`emoji-main-tab ${mainTab === 'emojis' ? 'is-active' : ''}`}
+                onClick={() => { setMainTab('emojis'); setEmojiSearch(''); }}
+              >
+                Emojis
+              </button>
+              <button
+                role="tab"
+                aria-selected={mainTab === 'custom'}
+                className={`emoji-main-tab ${mainTab === 'custom' ? 'is-active' : ''}`}
+                onClick={() => { setMainTab('custom'); setEmojiSearch(''); }}
+              >
+                Custom Library {customLibrary.length > 0 && `(${customLibrary.length})`}
+              </button>
+            </div>
+
             <div className="emoji-custom-input-wrapper">
               <Search size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} aria-hidden="true" />
               <input
                 ref={emojiInputRef}
                 type="text"
                 className="emoji-custom-input"
-                placeholder="Search, paste, or type emoji..."
+                placeholder={mainTab === 'custom' ? "Paste or type emoji to save..." : "Search emojis..."}
                 value={emojiSearch}
                 onChange={(e) => setEmojiSearch(e.target.value)}
                 onKeyDown={(e) => {
@@ -205,45 +215,32 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
               )}
             </div>
 
-            <div className="emoji-category-tabs">
-              {customLibrary.length > 0 && (
-                <button
-                  className={`emoji-category-tab ${activeCategory === 'saved' ? 'is-active' : ''}`}
-                  onClick={() => { setActiveCategory('saved'); setEmojiSearch(''); }}
-                  title="Custom Saved Library"
-                >
-                  📌
-                </button>
-              )}
-              <button
-                className={`emoji-category-tab ${activeCategory === 'all' ? 'is-active' : ''}`}
-                onClick={() => { setActiveCategory('all'); setEmojiSearch(''); }}
-                title="All Emojis (1400+)"
-              >
-                ⭐️
-              </button>
-              {EMOJI_CATEGORIES.map(cat => (
-                <button
-                  key={cat.id}
-                  className={`emoji-category-tab ${activeCategory === cat.id ? 'is-active' : ''}`}
-                  onClick={() => { setActiveCategory(cat.id); setEmojiSearch(''); }}
-                  title={cat.name}
-                >
-                  {cat.icon}
-                </button>
-              ))}
-            </div>
-
-            <div className="emoji-picker-hint">Press Win + . (Windows) or Cmd + Ctrl + Space (Mac)</div>
+            {mainTab === 'emojis' && !searchResults && (
+              <div className="emoji-category-tabs" role="tablist" aria-label="Emoji categories">
+                {EMOJI_CATEGORIES.map(cat => (
+                  <button
+                    key={cat.id}
+                    role="tab"
+                    aria-selected={activeCategory === cat.id}
+                    className={`emoji-category-tab ${activeCategory === cat.id ? 'is-active' : ''}`}
+                    onClick={() => setActiveCategory(cat.id)}
+                    title={cat.name}
+                  >
+                    {cat.icon}
+                  </button>
+                ))}
+              </div>
+            )}
             
             <div className="emoji-grid-container">
-              {displayCategories.map(cat => (
-                <div key={cat.id || cat.name} style={{ marginBottom: '8px' }}>
-                  <div className="emoji-category-header">{cat.name} ({cat.emojis.length})</div>
-                  <div className="emoji-grid" role="listbox">
-                    {cat.emojis.map((em, idx) => (
-                      <div key={idx} className="emoji-saved-item">
+              {searchResults ? (
+                <div>
+                  <div className="emoji-category-header">Search Results ({searchResults.length})</div>
+                  {searchResults.length > 0 ? (
+                    <div className="emoji-grid" role="listbox">
+                      {searchResults.map((em, idx) => (
                         <button 
+                          key={idx} 
                           className={`emoji-btn ${emoji === em ? 'is-active' : ''}`}
                           role="option"
                           aria-selected={emoji === em}
@@ -251,7 +248,27 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
                         >
                           {em}
                         </button>
-                        {cat.id === 'saved' && (
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="emoji-empty-state">No emojis found matching &ldquo;{emojiSearch}&rdquo;</div>
+                  )}
+                </div>
+              ) : mainTab === 'custom' ? (
+                <div>
+                  <div className="emoji-category-header">Saved Emojis ({customLibrary.length})</div>
+                  {customLibrary.length > 0 ? (
+                    <div className="emoji-grid" role="listbox">
+                      {customLibrary.map((em, idx) => (
+                        <div key={idx} className="emoji-saved-item">
+                          <button 
+                            className={`emoji-btn ${emoji === em ? 'is-active' : ''}`}
+                            role="option"
+                            aria-selected={emoji === em}
+                            onClick={() => { updatePage({ emoji: em }); setShowEmojiPicker(false); }}
+                          >
+                            {em}
+                          </button>
                           <button
                             className="emoji-delete-badge"
                             onClick={(e) => removeFromLibrary(em, e)}
@@ -260,12 +277,34 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
                           >
                             ×
                           </button>
-                        )}
-                      </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="emoji-empty-state">
+                      No custom emojis saved yet.<br />
+                      Paste or type any emoji in the search box above and click &ldquo;+ Save&rdquo;.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <div className="emoji-category-header">{currentCategoryData.name} ({currentCategoryData.emojis.length})</div>
+                  <div className="emoji-grid" role="listbox">
+                    {currentCategoryData.emojis.map((em, idx) => (
+                      <button 
+                        key={idx} 
+                        className={`emoji-btn ${emoji === em ? 'is-active' : ''}`}
+                        role="option"
+                        aria-selected={emoji === em}
+                        onClick={() => { updatePage({ emoji: em }); setShowEmojiPicker(false); }}
+                      >
+                        {em}
+                      </button>
                     ))}
                   </div>
                 </div>
-              ))}
+              )}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', borderTop: '1px solid var(--border-color)', paddingTop: '6px' }}>
@@ -295,3 +334,4 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
     </>
   )
 }
+
