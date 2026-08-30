@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar'
 import PageEditor from './components/PageEditor'
 import GraphView from './components/GraphView'
 import CommandPalette from './components/CommandPalette'
+import GlobalDialogHost from './components/common/GlobalDialogHost'
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -16,6 +17,7 @@ function App() {
       </div>
       {isGraphViewOpen && <GraphView onClose={() => setIsGraphViewOpen(false)} />}
       <CommandPalette />
+      <GlobalDialogHost />
     </div>
   )
 }

@@ -10,7 +10,12 @@ vi.mock('../utils/exportImport', () => ({
   importWorkspace: vi.fn()
 }));
 
+import GlobalDialogHost from './common/GlobalDialogHost';
+
 describe('Sidebar Component', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
   beforeEach(() => {
     // Clear Yjs map
     Array.from(workspacePages.keys()).forEach(key => workspacePages.delete(key));
@@ -68,12 +73,16 @@ describe('Sidebar Component', () => {
     });
   });
 
-  it('deletes a page when delete button is clicked and confirmed', async () => {
-    vi.spyOn(window, 'confirm').mockImplementation(() => true);
+  it('deletes a page when delete button is clicked and confirmed via modal', async () => {
     workspacePages.set('1', { title: 'Page 1', parentId: null, createdAt: 1, updatedAt: 1 });
     useWorkspaceStore.setState({ pages: workspacePages.toJSON() });
 
-    render(<Sidebar />);
+    render(
+      <>
+        <Sidebar />
+        <GlobalDialogHost />
+      </>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Page 1')).toBeInTheDocument();
@@ -82,10 +91,45 @@ describe('Sidebar Component', () => {
     const deleteBtn = screen.getByTitle('Delete page');
     fireEvent.click(deleteBtn);
 
+    // Custom modal should appear
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByText('Delete Page')).toBeInTheDocument();
+    });
+
+    // Click confirm in custom modal
+    const confirmBtn = screen.getByRole('button', { name: 'Delete' });
+    fireEvent.click(confirmBtn);
+
     await waitFor(() => {
       expect(workspacePages.has('1')).toBe(false);
     });
-    vi.restoreAllMocks();
+  });
+
+  it('skips confirmation when never ask again is stored', async () => {
+    localStorage.setItem('ephemeris_skip_delete_confirm', 'true');
+    workspacePages.set('1', { title: 'Page 1', parentId: null, createdAt: 1, updatedAt: 1 });
+    useWorkspaceStore.setState({ pages: workspacePages.toJSON() });
+
+    render(
+      <>
+        <Sidebar />
+        <GlobalDialogHost />
+      </>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Page 1')).toBeInTheDocument();
+    });
+
+    const deleteBtn = screen.getByTitle('Delete page');
+    fireEvent.click(deleteBtn);
+
+    // Should delete immediately without modal
+    await waitFor(() => {
+      expect(workspacePages.has('1')).toBe(false);
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
   });
 
   it('supports multi-selection with Shift key', async () => {
