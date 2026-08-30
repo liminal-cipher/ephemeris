@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Sidebar from './components/Sidebar'
 import PageEditor from './components/PageEditor'
 import GraphView from './components/GraphView'
+import CommandPalette from './components/CommandPalette'
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -14,6 +15,7 @@ function App() {
         <PageEditor onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} sidebarOpen={sidebarOpen} />
       </div>
       {isGraphViewOpen && <GraphView onClose={() => setIsGraphViewOpen(false)} />}
+      <CommandPalette />
     </div>
   )
 }
