@@ -153,6 +153,36 @@
   grid-template-columns: 1fr;
 }
 
+.bottom-panels-wrapper {
+  margin-top: 2rem;
+  border-top: 1px solid var(--border-color);
+  padding-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.bottom-panels-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.5rem;
+}
+
+.bottom-panels-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.bottom-panels-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .icon-btn.is-active {
   color: var(--primary-color, #2563eb);
   background-color: var(--hover-bg);
