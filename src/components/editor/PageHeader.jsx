@@ -1,11 +1,13 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { Image as ImageIcon, Smile, Search, Bookmark, Trash2 } from 'lucide-react'
+import { Image as ImageIcon, Smile, Search, Upload, Link as LinkIcon, Sparkles } from 'lucide-react'
 import { updateWorkspacePage } from '../../store/workspace'
 import { EMOJI_CATEGORIES, ALL_EMOJIS } from './emojiData'
+import PageIcon, { isImageIcon } from '../common/PageIcon'
 
 // Extract first grapheme (compound emoji aware)
 function extractFirstEmoji(str) {
   if (!str) return '';
+  if (isImageIcon(str)) return str;
   try {
     const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
     const segments = Array.from(segmenter.segment(str.trim()));
@@ -17,12 +19,14 @@ function extractFirstEmoji(str) {
 
 export default function PageHeader({ activePageId, title, emoji, coverImage, titleInputRef, editor }) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
-  const [mainTab, setMainTab] = useState('emojis') // 'emojis' | 'custom'
+  const [mainTab, setMainTab] = useState('emojis') // 'emojis' | 'custom' | 'image'
   const [emojiSearch, setEmojiSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState('smileys')
+  const [iconUrlInput, setIconUrlInput] = useState('')
   const emojiInputRef = useRef(null)
+  const iconFileInputRef = useRef(null)
 
-  // Custom Saved Emoji Library from localStorage
+  // Custom Saved Emoji & Icon Library from localStorage
   const [customLibrary, setCustomLibrary] = useState(() => {
     try {
       const saved = localStorage.getItem('ephemeris_custom_emojis');
@@ -77,10 +81,38 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
     }
   }
 
+  // Handle custom image file upload for icon
+  const handleIconFileUpload = (e) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const base64 = reader.result
+        updatePage({ emoji: base64 })
+        addToLibrary(base64)
+        setShowEmojiPicker(false)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  // Handle custom image URL submission
+  const handleIconUrlSubmit = (e) => {
+    e.preventDefault()
+    const trimmed = iconUrlInput.trim()
+    if (trimmed) {
+      updatePage({ emoji: trimmed })
+      addToLibrary(trimmed)
+      setIconUrlInput('')
+      setShowEmojiPicker(false)
+    }
+  }
+
   // Focus custom input when popover opens
   useEffect(() => {
     if (showEmojiPicker) {
       setEmojiSearch('')
+      setIconUrlInput('')
       setMainTab('emojis')
       setActiveCategory('smileys')
       const timer = setTimeout(() => {
@@ -92,7 +124,7 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
 
   const candidateEmoji = useMemo(() => {
     const detected = extractFirstEmoji(emojiSearch);
-    if (detected && (detected.length > 1 || detected.codePointAt(0) > 255)) {
+    if (detected && (detected.length > 1 || detected.codePointAt(0) > 255 || isImageIcon(detected))) {
       return detected;
     }
     return '';
@@ -155,12 +187,12 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
             aria-label="Change page icon"
             aria-expanded={showEmojiPicker}
           >
-            {emoji}
+            <PageIcon icon={emoji} size={48} className="page-header-icon" />
           </div>
         )}
         
         {showEmojiPicker && (
-          <div className="emoji-picker-popover" role="dialog" aria-label="Emoji picker">
+          <div className="emoji-picker-popover" role="dialog" aria-label="Icon picker">
             <div className="emoji-main-tabs" role="tablist">
               <button
                 role="tab"
@@ -178,42 +210,52 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
               >
                 Custom Library {customLibrary.length > 0 && `(${customLibrary.length})`}
               </button>
+              <button
+                role="tab"
+                aria-selected={mainTab === 'image'}
+                className={`emoji-main-tab ${mainTab === 'image' ? 'is-active' : ''}`}
+                onClick={() => { setMainTab('image'); setEmojiSearch(''); }}
+              >
+                Upload / Link
+              </button>
             </div>
 
-            <div className="emoji-custom-input-wrapper">
-              <Search size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} aria-hidden="true" />
-              <input
-                ref={emojiInputRef}
-                type="text"
-                className="emoji-custom-input"
-                placeholder={mainTab === 'custom' ? "Paste or type emoji to save..." : "Search emojis..."}
-                value={emojiSearch}
-                onChange={(e) => setEmojiSearch(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && candidateEmoji) {
-                    addToLibrary(candidateEmoji);
-                    updatePage({ emoji: candidateEmoji });
-                    setShowEmojiPicker(false);
-                  } else if (e.key === 'Escape') {
-                    setShowEmojiPicker(false);
-                  }
-                }}
-                aria-label="Search or paste emoji"
-              />
-              {candidateEmoji && (
-                <button
-                  className="emoji-save-btn"
-                  onClick={() => {
-                    addToLibrary(candidateEmoji);
-                    updatePage({ emoji: candidateEmoji });
-                    setShowEmojiPicker(false);
+            {mainTab !== 'image' && (
+              <div className="emoji-custom-input-wrapper">
+                <Search size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} aria-hidden="true" />
+                <input
+                  ref={emojiInputRef}
+                  type="text"
+                  className="emoji-custom-input"
+                  placeholder={mainTab === 'custom' ? "Paste or type emoji to save..." : "Search emojis..."}
+                  value={emojiSearch}
+                  onChange={(e) => setEmojiSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && candidateEmoji) {
+                      addToLibrary(candidateEmoji);
+                      updatePage({ emoji: candidateEmoji });
+                      setShowEmojiPicker(false);
+                    } else if (e.key === 'Escape') {
+                      setShowEmojiPicker(false);
+                    }
                   }}
-                  title="Save to custom library and set as icon"
-                >
-                  + Save
-                </button>
-              )}
-            </div>
+                  aria-label="Search or paste emoji"
+                />
+                {candidateEmoji && (
+                  <button
+                    className="emoji-save-btn"
+                    onClick={() => {
+                      addToLibrary(candidateEmoji);
+                      updatePage({ emoji: candidateEmoji });
+                      setShowEmojiPicker(false);
+                    }}
+                    title="Save to custom library and set as icon"
+                  >
+                    + Save
+                  </button>
+                )}
+              </div>
+            )}
 
             {mainTab === 'emojis' && !searchResults && (
               <div className="emoji-category-tabs" role="tablist" aria-label="Emoji categories">
@@ -233,7 +275,52 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
             )}
             
             <div className="emoji-grid-container">
-              {searchResults ? (
+              {mainTab === 'image' ? (
+                <div className="custom-icon-upload-panel">
+                  <div className="custom-icon-group">
+                    <span className="custom-icon-label">Upload Image File</span>
+                    <button 
+                      type="button" 
+                      className="custom-icon-upload-trigger"
+                      onClick={() => iconFileInputRef.current?.click()}
+                    >
+                      <Upload size={15} aria-hidden="true" /> Choose an image
+                    </button>
+                    <input 
+                      ref={iconFileInputRef}
+                      type="file" 
+                      accept="image/*" 
+                      style={{ display: 'none' }}
+                      onChange={handleIconFileUpload}
+                    />
+                    <span className="custom-icon-hint">PNG, JPG, SVG, WebP, GIF (recommended square)</span>
+                  </div>
+
+                  <div className="custom-icon-divider">or</div>
+
+                  <form onSubmit={handleIconUrlSubmit} className="custom-icon-url-form">
+                    <span className="custom-icon-label">Image URL</span>
+                    <div className="emoji-custom-input-wrapper">
+                      <LinkIcon size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} aria-hidden="true" />
+                      <input 
+                        type="url" 
+                        placeholder="https://example.com/icon.png"
+                        value={iconUrlInput}
+                        onChange={(e) => setIconUrlInput(e.target.value)}
+                        className="emoji-custom-input"
+                        aria-label="Image icon URL"
+                      />
+                      <button 
+                        type="submit" 
+                        className="emoji-save-btn" 
+                        disabled={!iconUrlInput.trim()}
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : searchResults ? (
                 <div>
                   <div className="emoji-category-header">Search Results ({searchResults.length})</div>
                   {searchResults.length > 0 ? (
@@ -246,7 +333,7 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
                           aria-selected={emoji === em}
                           onClick={() => { updatePage({ emoji: em }); setShowEmojiPicker(false); }}
                         >
-                          {em}
+                          <PageIcon icon={em} size={20} />
                         </button>
                       ))}
                     </div>
@@ -256,7 +343,7 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
                 </div>
               ) : mainTab === 'custom' ? (
                 <div>
-                  <div className="emoji-category-header">Saved Emojis ({customLibrary.length})</div>
+                  <div className="emoji-category-header">Saved Emojis &amp; Icons ({customLibrary.length})</div>
                   {customLibrary.length > 0 ? (
                     <div className="emoji-grid" role="listbox">
                       {customLibrary.map((em, idx) => (
@@ -267,13 +354,13 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
                             aria-selected={emoji === em}
                             onClick={() => { updatePage({ emoji: em }); setShowEmojiPicker(false); }}
                           >
-                            {em}
+                            <PageIcon icon={em} size={20} />
                           </button>
                           <button
                             className="emoji-delete-badge"
                             onClick={(e) => removeFromLibrary(em, e)}
                             title="Remove from saved library"
-                            aria-label={`Remove ${em} from library`}
+                            aria-label={`Remove icon from library`}
                           >
                             ×
                           </button>
@@ -282,8 +369,8 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
                     </div>
                   ) : (
                     <div className="emoji-empty-state">
-                      No custom emojis saved yet.<br />
-                      Paste or type any emoji in the search box above and click &ldquo;+ Save&rdquo;.
+                      No custom icons saved yet.<br />
+                      Paste an emoji or upload an image in the &ldquo;Upload / Link&rdquo; tab to save icons here.
                     </div>
                   )}
                 </div>
@@ -299,7 +386,7 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
                         aria-selected={emoji === em}
                         onClick={() => { updatePage({ emoji: em }); setShowEmojiPicker(false); }}
                       >
-                        {em}
+                        <PageIcon icon={em} size={20} />
                       </button>
                     ))}
                   </div>
@@ -334,4 +421,5 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
     </>
   )
 }
+
 

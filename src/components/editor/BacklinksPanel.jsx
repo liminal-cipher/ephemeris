@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react'
-import { Link as LinkIcon } from 'lucide-react'
+import { Link as LinkIcon, FileText } from 'lucide-react'
 import { extractLinksFromPages } from '../../utils/linkParser'
+import PageIcon from '../common/PageIcon'
 
 export default function BacklinksPanel({ dexiePages, allPages, activePageId, setActivePageId }) {
   const backlinks = useMemo(() => {
@@ -34,7 +35,9 @@ export default function BacklinksPanel({ dexiePages, allPages, activePageId, set
               }}
               aria-label={`Go to backlink page: ${p.title || 'Untitled'}`}
             >
-              <span className="backlink-emoji" aria-hidden="true">{p.emoji || '📄'}</span>
+              <span className="backlink-emoji" aria-hidden="true">
+                <PageIcon icon={p.emoji} size={15} defaultIcon={<FileText size={15} />} />
+              </span>
               <span className="backlink-title">{p.title || 'Untitled'}</span>
             </li>
           ))}
