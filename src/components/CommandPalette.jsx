@@ -5,6 +5,7 @@ import { usePagesList } from '../store/workspace';
 import { useStore } from '../store/useStore';
 import { extractTextFromJson } from '../utils/linkParser';
 import { FileText, Search } from 'lucide-react';
+import PageIcon from './common/PageIcon';
 import './CommandPalette.css';
 
 function HighlightText({ text, query }) {
@@ -179,7 +180,7 @@ export default function CommandPalette() {
                 onMouseEnter={() => setSelectedIndex(index)}
               >
                 <span className="command-palette-item-icon" aria-hidden="true">
-                  {item.emoji || <FileText size={16} />}
+                  <PageIcon icon={item.emoji} size={16} />
                 </span>
                 <div className="command-palette-item-details">
                   <div className="command-palette-item-title">
@@ -203,4 +204,3 @@ export default function CommandPalette() {
     </div>
   );
 }
-

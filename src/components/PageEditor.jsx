@@ -26,6 +26,8 @@ import BacklinksPanel from './editor/BacklinksPanel'
 import EditorToolbar from './editor/EditorToolbar'
 import SubPagesPanel from './editor/SubPagesPanel'
 
+import PageIcon from './common/PageIcon'
+
 export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   const { activePageId, setActivePageId } = useStore()
   const allPages = usePagesList()
@@ -206,7 +208,7 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
                   onClick={() => setActivePageId(crumb.id)}
                   aria-current={crumb.id === page.id ? 'page' : undefined}
                 >
-                  {crumb.emoji && <span className="breadcrumb-emoji">{crumb.emoji}</span>}
+                  {crumb.emoji && <PageIcon icon={crumb.emoji} size={14} className="breadcrumb-emoji" />}
                   <span className="breadcrumb-text">{crumb.title || 'Untitled'}</span>
                 </button>
               </span>
