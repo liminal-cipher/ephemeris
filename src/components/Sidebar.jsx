@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore'
 import { FileText, Plus, Download, Upload, Search, Network, Trash2, X, ChevronRight, ChevronDown } from 'lucide-react'
 import { exportWorkspace, importWorkspace } from '../utils/exportImport'
 import { useRef, useState, useEffect } from 'react'
+import PageIcon from './common/PageIcon'
 import './Sidebar.css'
 
 // Check if targetId is descendant of parentCandidateId
@@ -266,7 +267,7 @@ export default function Sidebar({ onOpenGraph }) {
               <span className="tree-toggle-spacer" />
             )}
             
-            <span className="emoji">{page.emoji || <FileText size={15} />}</span>
+            <span className="emoji"><PageIcon icon={page.emoji} size={15} /></span>
             <span className="title">{page.title || 'Untitled'}</span>
             
             <div className="item-actions">
@@ -349,7 +350,7 @@ export default function Sidebar({ onOpenGraph }) {
                   aria-selected={isSelected}
                   tabIndex={0}
                 >
-                  <span className="emoji">{page.emoji || <FileText size={16} />}</span>
+                  <span className="emoji"><PageIcon icon={page.emoji} size={15} /></span>
                   <span className="title">{page.title || 'Untitled'}</span>
                   <div className="item-actions">
                     <button 

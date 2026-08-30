@@ -1,6 +1,7 @@
 import React from 'react'
 import { FileText, Plus, CornerDownRight } from 'lucide-react'
 import { createWorkspacePage } from '../../store/workspace'
+import PageIcon from '../common/PageIcon'
 import './SubPagesPanel.css'
 
 export default function SubPagesPanel({ activePageId, allPages, setActivePageId }) {
@@ -52,7 +53,7 @@ export default function SubPagesPanel({ activePageId, allPages, setActivePageId 
               }
             }}
           >
-            <span className="sub-page-icon">{child.emoji || <FileText size={16} />}</span>
+            <span className="sub-page-icon"><PageIcon icon={child.emoji} size={18} /></span>
             <div className="sub-page-info">
               <span className="sub-page-title">{child.title || 'Untitled'}</span>
               <span className="sub-page-date">
