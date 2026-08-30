@@ -1,11 +1,41 @@
-import React, { useState } from 'react'
-import { Image as ImageIcon, Smile } from 'lucide-react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
+import { Image as ImageIcon, Smile, Search } from 'lucide-react'
 import { updateWorkspacePage } from '../../store/workspace'
 
-const EMOJI_LIST = ['📄', '💡', '📝', '🚀', '⭐️', '📌', '📚', '🛠️', '👋', '🎯', '✨', '🔥']
+const EMOJI_CATEGORIES = [
+  // Common & Smileys
+  '📄', '💡', '📝', '🚀', '⭐️', '📌', '📚', '🛠️', '👋', '🎯', '✨', '🔥',
+  '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😉', '😊', '😇',
+  '🥰', '😍', '🤩', '😘', '😋', '😎', '🥳', '🤔', '🤫', '🤗', '🫡', '🥹',
+  // Work & Productivity
+  '📁', '📂', '📑', '📊', '📈', '📋', '📍', '📎', '✏️', '✒️', '📦', '💻',
+  '🖥️', '📱', '⌨️', '🖱️', '⚙️', '🔬', '🔭', '📡', '🛡️', '🔑', '🔒', '🏷️',
+  // Ideas & Tech
+  '⚡️', '🌟', '🪐', '🌌', '🛸', '🛰️', '🤖', '👾', '🎮', '🔋', '🔌', '🧬',
+  '🧪', '🧭', '🔮', '🏆', '🥇', '🧩', '🚩', '🏁', '🎨', '🎬', '🎤', '🎧',
+  // Nature & Animals
+  '🌱', '🌲', '🌳', '🌴', '🍀', '🌸', '🌺', '🌻', '🍎', '☕️', '🍵', '🌍',
+  '🌎', '🌏', '🌕', '☀️', '🌈', '🌧️', '❄️', '🐱', '🐶', '🦊', '🦁', '🦉',
+  // Hearts & Symbols
+  '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💖', '💯', '✅'
+]
+
+// Extract first grapheme (compound emoji aware)
+function extractFirstEmoji(str) {
+  if (!str) return '';
+  try {
+    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+    const segments = Array.from(segmenter.segment(str.trim()));
+    return segments[0]?.segment || '';
+  } catch {
+    return Array.from(str.trim())[0] || '';
+  }
+}
 
 export default function PageHeader({ activePageId, title, emoji, coverImage, titleInputRef, editor }) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [emojiSearch, setEmojiSearch] = useState('')
+  const emojiInputRef = useRef(null)
 
   const updatePage = (changes) => {
     if (activePageId) {
@@ -24,6 +54,34 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
       reader.readAsDataURL(file)
     }
   }
+
+  // Focus custom input when popover opens
+  useEffect(() => {
+    if (showEmojiPicker) {
+      setEmojiSearch('')
+      const timer = setTimeout(() => {
+        emojiInputRef.current?.focus()
+      }, 50)
+      return () => clearTimeout(timer)
+    }
+  }, [showEmojiPicker])
+
+  // Handle custom emoji input (typing, pasting, or OS emoji keyboard)
+  const handleCustomInput = (val) => {
+    setEmojiSearch(val)
+    const detected = extractFirstEmoji(val)
+    // Check if the input contains a non-ascii character or emoji symbol
+    if (detected && (detected.length > 1 || detected.codePointAt(0) > 255)) {
+      updatePage({ emoji: detected })
+      setShowEmojiPicker(false)
+    }
+  }
+
+  const filteredEmojis = useMemo(() => {
+    const trimmed = emojiSearch.trim()
+    if (!trimmed) return EMOJI_CATEGORIES
+    return EMOJI_CATEGORIES.filter(em => em.includes(trimmed))
+  }, [emojiSearch])
 
   return (
     <>
@@ -75,20 +133,48 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
         
         {showEmojiPicker && (
           <div className="emoji-picker-popover" role="dialog" aria-label="Emoji picker">
-            <div className="emoji-grid" role="listbox">
-              {EMOJI_LIST.map(em => (
-                <button 
-                  key={em} 
-                  className="emoji-btn" 
-                  role="option"
-                  aria-selected={emoji === em}
-                  onClick={() => { updatePage({ emoji: em }); setShowEmojiPicker(false); }}
-                >
-                  {em}
-                </button>
-              ))}
+            <div className="emoji-custom-input-wrapper">
+              <Search size={14} style={{ color: 'var(--text-muted)' }} aria-hidden="true" />
+              <input
+                ref={emojiInputRef}
+                type="text"
+                className="emoji-custom-input"
+                placeholder="Type or paste any emoji..."
+                value={emojiSearch}
+                onChange={(e) => handleCustomInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const detected = extractFirstEmoji(emojiSearch)
+                    if (detected) {
+                      updatePage({ emoji: detected })
+                      setShowEmojiPicker(false)
+                    }
+                  } else if (e.key === 'Escape') {
+                    setShowEmojiPicker(false)
+                  }
+                }}
+                aria-label="Custom emoji input"
+              />
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '8px' }}>
+            <div className="emoji-picker-hint">Press Win + . (Windows) or Cmd + Ctrl + Space (Mac)</div>
+            
+            <div className="emoji-grid-container">
+              <div className="emoji-grid" role="listbox">
+                {filteredEmojis.map((em, idx) => (
+                  <button 
+                    key={idx} 
+                    className={`emoji-btn ${emoji === em ? 'is-active' : ''}`}
+                    role="option"
+                    aria-selected={emoji === em}
+                    onClick={() => { updatePage({ emoji: em }); setShowEmojiPicker(false); }}
+                  >
+                    {em}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', borderTop: '1px solid var(--border-color)', paddingTop: '6px' }}>
               <button className="emoji-picker-action" onClick={() => { updatePage({ emoji: '' }); setShowEmojiPicker(false); }}>Remove</button>
               <button className="emoji-picker-action" onClick={() => setShowEmojiPicker(false)}>Close</button>
             </div>
@@ -115,3 +201,4 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
     </>
   )
 }
+
