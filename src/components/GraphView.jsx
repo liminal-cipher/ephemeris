@@ -1,14 +1,17 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useStore } from '../store/useStore'
+import { useWorkspaceStore } from '../store/workspace'
 import { extractLinksFromPages } from '../utils/linkParser'
 import ForceGraph2D from 'react-force-graph-2d'
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, useMemo } from 'react'
 import { X } from 'lucide-react'
 import './GraphView.css'
 
 export default function GraphView({ onClose }) {
-  const pages = useLiveQuery(() => db.pages.toArray())
+  const dexiePages = useLiveQuery(() => db.pages.toArray())
+  const getPagesArray = useWorkspaceStore(state => state.getPagesArray)
+  const workspacePages = getPagesArray()
   const { setActivePageId } = useStore()
   const fgRef = useRef()
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
@@ -32,7 +35,15 @@ export default function GraphView({ onClose }) {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  const graphData = pages ? extractLinksFromPages(pages) : { nodes: [], edges: [] }
+  const mergedPages = useMemo(() => {
+    if (!workspacePages) return []
+    return workspacePages.map(wp => {
+      const dp = dexiePages?.find(d => d.id === wp.id || d.id === Number(wp.id))
+      return { ...wp, content: dp ? dp.content : null }
+    })
+  }, [workspacePages, dexiePages])
+
+  const graphData = mergedPages.length > 0 ? extractLinksFromPages(mergedPages) : { nodes: [], edges: [] }
 
   const handleNodeClick = (node) => {
     setActivePageId(node.id)
