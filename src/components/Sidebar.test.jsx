@@ -111,5 +111,61 @@ describe('Sidebar Component', () => {
       expect(screen.getByText('3 selected')).toBeInTheDocument();
     });
   });
+
+  it('toggles collapsible sub-pages with chevron button', async () => {
+    workspacePages.set('p1', { title: 'Parent Page', parentId: null, createdAt: 1, updatedAt: 1 });
+    workspacePages.set('c1', { title: 'Child Page', parentId: 'p1', createdAt: 2, updatedAt: 2 });
+    useWorkspaceStore.setState({ pages: workspacePages.toJSON() });
+
+    render(<Sidebar />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Parent Page')).toBeInTheDocument();
+    });
+
+    const toggleBtn = screen.getByLabelText('Expand sub-pages');
+    expect(toggleBtn).toBeInTheDocument();
+
+    // Click to expand
+    fireEvent.click(toggleBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Child Page')).toBeInTheDocument();
+    });
+
+    // Click to collapse
+    const collapseBtn = screen.getByLabelText('Collapse sub-pages');
+    fireEvent.click(collapseBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Child Page')).not.toBeInTheDocument();
+    });
+  });
+
+  it('re-parents page on drop', async () => {
+    workspacePages.set('p1', { title: 'Target Parent', parentId: null, createdAt: 1, updatedAt: 1 });
+    workspacePages.set('p2', { title: 'Moving Note', parentId: null, createdAt: 2, updatedAt: 2 });
+    useWorkspaceStore.setState({ pages: workspacePages.toJSON() });
+
+    render(<Sidebar />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Target Parent')).toBeInTheDocument();
+      expect(screen.getByText('Moving Note')).toBeInTheDocument();
+    });
+
+    const targetItem = screen.getByText('Target Parent').closest('.sidebar-item');
+    fireEvent.drop(targetItem, {
+      dataTransfer: {
+        getData: (type) => (type === 'text/plain' ? 'p2' : '')
+      }
+    });
+
+    await waitFor(() => {
+      const moved = workspacePages.get('p2');
+      expect(moved.parentId).toBe('p1');
+    });
+  });
 });
+
 

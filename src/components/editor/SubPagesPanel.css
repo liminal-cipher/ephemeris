@@ -1,0 +1,121 @@
+.sub-pages-container {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.sub-pages-container.empty {
+  margin-top: 1rem;
+  padding-top: 0.5rem;
+  border-top: none;
+}
+
+.sub-pages-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.sub-pages-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.add-subpage-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--primary-color, #2563eb);
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.add-subpage-btn:hover {
+  background-color: var(--hover-bg);
+}
+
+.add-subpage-inline-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.add-subpage-inline-btn:hover {
+  background-color: var(--hover-bg);
+  color: var(--text-main);
+}
+
+.sub-pages-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.6rem;
+}
+
+.sub-page-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-color);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sub-page-card:hover {
+  background-color: var(--hover-bg);
+  border-color: var(--primary-color, #2563eb);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.sub-page-icon {
+  font-size: 1.15rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sub-page-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.sub-page-title {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sub-page-date {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
