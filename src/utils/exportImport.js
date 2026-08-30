@@ -1,5 +1,6 @@
 import { db } from '../db/db';
 import { workspacePages, workspaceDoc } from '../store/workspace';
+import { showToast } from '../store/dialogStore';
 
 export async function exportWorkspace() {
   try {
@@ -23,9 +24,10 @@ export async function exportWorkspace() {
     a.click();
     
     URL.revokeObjectURL(url);
+    showToast('Workspace backup exported successfully.', 'success');
   } catch (error) {
     console.error('Failed to export workspace:', error);
-    alert('Failed to export workspace.');
+    showToast('Failed to export workspace.', 'error');
   }
 }
 

@@ -1,5 +1,6 @@
 import { usePagesList, useWorkspaceStore, createWorkspacePage, updateWorkspacePage, deleteWorkspacePage } from '../store/workspace'
 import { useStore } from '../store/useStore'
+import { showConfirm, showToast } from '../store/dialogStore'
 import { FileText, Plus, Download, Upload, Search, Network, Trash2, X, ChevronRight, ChevronDown } from 'lucide-react'
 import { exportWorkspace, importWorkspace } from '../utils/exportImport'
 import { useRef, useState, useEffect } from 'react'
@@ -57,9 +58,9 @@ export default function Sidebar({ onOpenGraph }) {
     if (file) {
       try {
         const count = await importWorkspace(file)
-        alert(`Successfully imported ${count} pages.`)
+        showToast(`Successfully imported ${count} pages.`, 'success')
       } catch (err) {
-        alert('Failed to import backup file.')
+        showToast('Failed to import backup file.', 'error')
       }
       e.target.value = '' // reset input
     }
@@ -157,28 +158,47 @@ export default function Sidebar({ onOpenGraph }) {
 
   // Delete individual page
   const handleDeletePage = (pageId, e) => {
-    e.stopPropagation()
-    if (window.confirm('Are you sure you want to delete this page?')) {
-      deleteWorkspacePage(pageId)
-      if (activePageId === pageId) {
-        const remaining = pages.filter(p => p.id !== pageId)
-        setActivePageId(remaining.length > 0 ? remaining[0].id : null)
+    e?.stopPropagation()
+    const target = pages.find(p => p.id === pageId)
+    const title = target?.title || 'Untitled'
+
+    showConfirm({
+      title: 'Delete Page',
+      message: `Are you sure you want to delete "${title}"? Any sub-pages will also be removed.`,
+      confirmText: 'Delete',
+      isDanger: true,
+      showNeverAskKey: 'ephemeris_skip_delete_confirm',
+      onConfirm: () => {
+        deleteWorkspacePage(pageId)
+        if (activePageId === pageId) {
+          const remaining = pages.filter(p => p.id !== pageId)
+          setActivePageId(remaining.length > 0 ? remaining[0].id : null)
+        }
+        setSelectedPageIds(prev => prev.filter(id => id !== pageId))
+        showToast('Page deleted', 'info', 2000)
       }
-      setSelectedPageIds(prev => prev.filter(id => id !== pageId))
-    }
+    })
   }
 
   // Delete multiple selected pages
   const handleBulkDelete = () => {
     if (selectedPageIds.length === 0) return
     const count = selectedPageIds.length
-    if (window.confirm(`Are you sure you want to delete ${count} selected page${count > 1 ? 's' : ''}?`)) {
-      selectedPageIds.forEach(id => deleteWorkspacePage(id))
-      const remaining = pages.filter(p => !selectedPageIds.includes(p.id))
-      setActivePageId(remaining.length > 0 ? remaining[0].id : null)
-      setSelectedPageIds([])
-      setLastSelectedId(null)
-    }
+    showConfirm({
+      title: `Delete ${count} pages`,
+      message: `Are you sure you want to delete ${count} selected page${count > 1 ? 's' : ''}?`,
+      confirmText: `Delete ${count} Pages`,
+      isDanger: true,
+      showNeverAskKey: 'ephemeris_skip_delete_confirm',
+      onConfirm: () => {
+        selectedPageIds.forEach(id => deleteWorkspacePage(id))
+        const remaining = pages.filter(p => !selectedPageIds.includes(p.id))
+        setActivePageId(remaining.length > 0 ? remaining[0].id : null)
+        setSelectedPageIds([])
+        setLastSelectedId(null)
+        showToast(`Deleted ${count} pages`, 'info', 2000)
+      }
+    })
   }
 
   // Handle keyboard Delete / Backspace for bulk deletion
