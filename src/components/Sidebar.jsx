@@ -1,6 +1,6 @@
-import { usePagesList, useWorkspaceStore, createWorkspacePage } from '../store/workspace'
+import { usePagesList, useWorkspaceStore, createWorkspacePage, deleteWorkspacePage } from '../store/workspace'
 import { useStore } from '../store/useStore'
-import { FileText, Plus, Download, Upload, Search, Network } from 'lucide-react'
+import { FileText, Plus, Download, Upload, Search, Network, Trash2, X } from 'lucide-react'
 import { exportWorkspace, importWorkspace } from '../utils/exportImport'
 import { useRef, useState, useEffect } from 'react'
 import './Sidebar.css'
@@ -11,10 +11,14 @@ export default function Sidebar({ onOpenGraph }) {
   const { activePageId, setActivePageId } = useStore()
   const fileInputRef = useRef(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [selectedPageIds, setSelectedPageIds] = useState([])
+  const [lastSelectedId, setLastSelectedId] = useState(null)
 
   const handleCreateNewPage = (parentId = null) => {
     const id = createWorkspacePage(parentId)
     setActivePageId(id)
+    setSelectedPageIds([id])
+    setLastSelectedId(id)
   }
 
   const handleImportClick = () => {
@@ -38,6 +42,8 @@ export default function Sidebar({ onOpenGraph }) {
   useEffect(() => {
     if (isSynced && pages.length > 0 && !activePageId) {
       setActivePageId(pages[0].id)
+      setSelectedPageIds([pages[0].id])
+      setLastSelectedId(pages[0].id)
     }
   }, [pages.length, activePageId, setActivePageId, isSynced])
 
@@ -56,29 +62,19 @@ export default function Sidebar({ onOpenGraph }) {
     return tree
   }
 
-  const renderPages = (pagesToRender, depth = 0) => {
-    return pagesToRender.map(page => (
-      <div key={page.id}>
-        <div 
-          className={`sidebar-item ${activePageId === page.id ? 'active' : ''}`}
-          onClick={() => setActivePageId(page.id)}
-          style={{ paddingLeft: `${depth * 1 + 1}rem` }}
-        >
-          <span className="emoji">{page.emoji || <FileText size={16} />}</span>
-          <span className="title">{page.title || 'Untitled'}</span>
-          <div className="item-actions">
-            <button 
-              className="icon-btn-small" 
-              onClick={(e) => { e.stopPropagation(); handleCreateNewPage(page.id); }}
-              title="Add child page"
-            >
-              <Plus size={14} />
-            </button>
-          </div>
-        </div>
-        {page.children && page.children.length > 0 && renderPages(page.children, depth + 1)}
-      </div>
-    ))
+  // Get flattened visible order for Shift-click selection range
+  const getVisibleIds = (treeNodes) => {
+    const ids = []
+    const traverse = (nodes) => {
+      nodes.forEach(node => {
+        ids.push(node.id)
+        if (node.children && node.children.length > 0) {
+          traverse(node.children)
+        }
+      })
+    }
+    traverse(treeNodes)
+    return ids
   }
 
   const filteredPages = searchQuery 
@@ -86,6 +82,121 @@ export default function Sidebar({ onOpenGraph }) {
     : []
 
   const tree = !searchQuery ? buildTree(pages) : []
+
+  // Multi-selection click handler with Shift / Ctrl support
+  const handleItemClick = (pageId, e) => {
+    const visibleIds = searchQuery ? filteredPages.map(p => p.id) : getVisibleIds(tree)
+
+    if (e.shiftKey && lastSelectedId) {
+      const idx1 = visibleIds.indexOf(lastSelectedId)
+      const idx2 = visibleIds.indexOf(pageId)
+      if (idx1 !== -1 && idx2 !== -1) {
+        const start = Math.min(idx1, idx2)
+        const end = Math.max(idx1, idx2)
+        const rangeIds = visibleIds.slice(start, end + 1)
+        setSelectedPageIds(Array.from(new Set([...selectedPageIds, ...rangeIds])))
+      } else {
+        setSelectedPageIds([pageId])
+      }
+    } else if (e.ctrlKey || e.metaKey) {
+      if (selectedPageIds.includes(pageId)) {
+        setSelectedPageIds(selectedPageIds.filter(id => id !== pageId))
+      } else {
+        setSelectedPageIds([...selectedPageIds, pageId])
+      }
+      setLastSelectedId(pageId)
+    } else {
+      setSelectedPageIds([pageId])
+      setLastSelectedId(pageId)
+    }
+
+    setActivePageId(pageId)
+  }
+
+  // Delete individual page
+  const handleDeletePage = (pageId, e) => {
+    e.stopPropagation()
+    if (window.confirm('Are you sure you want to delete this page?')) {
+      deleteWorkspacePage(pageId)
+      if (activePageId === pageId) {
+        const remaining = pages.filter(p => p.id !== pageId)
+        setActivePageId(remaining.length > 0 ? remaining[0].id : null)
+      }
+      setSelectedPageIds(prev => prev.filter(id => id !== pageId))
+    }
+  }
+
+  // Delete multiple selected pages
+  const handleBulkDelete = () => {
+    if (selectedPageIds.length === 0) return
+    const count = selectedPageIds.length
+    if (window.confirm(`Are you sure you want to delete ${count} selected page${count > 1 ? 's' : ''}?`)) {
+      selectedPageIds.forEach(id => deleteWorkspacePage(id))
+      const remaining = pages.filter(p => !selectedPageIds.includes(p.id))
+      setActivePageId(remaining.length > 0 ? remaining[0].id : null)
+      setSelectedPageIds([])
+      setLastSelectedId(null)
+    }
+  }
+
+  // Handle keyboard Delete / Backspace for bulk deletion
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+        return
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedPageIds.length > 0) {
+        e.preventDefault()
+        handleBulkDelete()
+      } else if (e.key === 'Escape' && selectedPageIds.length > 0) {
+        setSelectedPageIds([])
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedPageIds, pages, activePageId])
+
+  const renderPages = (pagesToRender, depth = 0) => {
+    return pagesToRender.map(page => {
+      const isSelected = selectedPageIds.includes(page.id)
+      const isActive = activePageId === page.id
+
+      return (
+        <div key={page.id}>
+          <div 
+            className={`sidebar-item ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`}
+            onClick={(e) => handleItemClick(page.id, e)}
+            style={{ paddingLeft: `${depth * 1 + 1}rem` }}
+            role="treeitem"
+            aria-selected={isSelected}
+            tabIndex={0}
+          >
+            <span className="emoji">{page.emoji || <FileText size={16} />}</span>
+            <span className="title">{page.title || 'Untitled'}</span>
+            <div className="item-actions">
+              <button 
+                className="icon-btn-small" 
+                onClick={(e) => { e.stopPropagation(); handleCreateNewPage(page.id); }}
+                title="Add child page"
+                aria-label="Add child page"
+              >
+                <Plus size={14} />
+              </button>
+              <button 
+                className="icon-btn-small icon-btn-delete" 
+                onClick={(e) => handleDeletePage(page.id, e)}
+                title="Delete page"
+                aria-label="Delete page"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </div>
+          {page.children && page.children.length > 0 && renderPages(page.children, depth + 1)}
+        </div>
+      )
+    })
+  }
 
   return (
     <div className="sidebar">
@@ -98,24 +209,65 @@ export default function Sidebar({ onOpenGraph }) {
             placeholder="Search pages..." 
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
+            aria-label="Search pages"
           />
         </div>
+        {selectedPageIds.length > 1 && (
+          <div className="sidebar-selection-banner" role="status">
+            <span className="selection-count">{selectedPageIds.length} selected</span>
+            <div className="selection-actions">
+              <button 
+                className="selection-action-btn delete-btn"
+                onClick={handleBulkDelete}
+                title={`Delete ${selectedPageIds.length} pages`}
+                aria-label={`Delete ${selectedPageIds.length} selected pages`}
+              >
+                <Trash2 size={13} /> Delete
+              </button>
+              <button 
+                className="selection-action-btn"
+                onClick={() => setSelectedPageIds([])}
+                title="Clear selection (Esc)"
+                aria-label="Clear selection"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       <div className="sidebar-content">
         {!isSynced ? (
           <div className="empty-state" style={{ padding: '1rem', fontSize: '0.85rem' }}>Loading workspace...</div>
         ) : searchQuery ? (
           filteredPages.length > 0 ? (
-            filteredPages.map(page => (
-              <div 
-                key={page.id} 
-                className={`sidebar-item ${activePageId === page.id ? 'active' : ''}`}
-                onClick={() => setActivePageId(page.id)}
-              >
-                <span className="emoji">{page.emoji || <FileText size={16} />}</span>
-                <span className="title">{page.title || 'Untitled'}</span>
-              </div>
-            ))
+            filteredPages.map(page => {
+              const isSelected = selectedPageIds.includes(page.id)
+              const isActive = activePageId === page.id
+              return (
+                <div 
+                  key={page.id} 
+                  className={`sidebar-item ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`}
+                  onClick={(e) => handleItemClick(page.id, e)}
+                  role="treeitem"
+                  aria-selected={isSelected}
+                  tabIndex={0}
+                >
+                  <span className="emoji">{page.emoji || <FileText size={16} />}</span>
+                  <span className="title">{page.title || 'Untitled'}</span>
+                  <div className="item-actions">
+                    <button 
+                      className="icon-btn-small icon-btn-delete" 
+                      onClick={(e) => handleDeletePage(page.id, e)}
+                      title="Delete page"
+                      aria-label="Delete page"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              )
+            })
           ) : (
             <div className="empty-state" style={{ padding: '1rem', fontSize: '0.85rem' }}>No pages found.</div>
           )
@@ -151,3 +303,4 @@ export default function Sidebar({ onOpenGraph }) {
     </div>
   )
 }
+

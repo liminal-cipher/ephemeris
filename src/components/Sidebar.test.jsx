@@ -67,4 +67,49 @@ describe('Sidebar Component', () => {
       expect(screen.getByText('Banana')).toBeInTheDocument();
     });
   });
+
+  it('deletes a page when delete button is clicked and confirmed', async () => {
+    vi.spyOn(window, 'confirm').mockImplementation(() => true);
+    workspacePages.set('1', { title: 'Page 1', parentId: null, createdAt: 1, updatedAt: 1 });
+    useWorkspaceStore.setState({ pages: workspacePages.toJSON() });
+
+    render(<Sidebar />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Page 1')).toBeInTheDocument();
+    });
+
+    const deleteBtn = screen.getByTitle('Delete page');
+    fireEvent.click(deleteBtn);
+
+    await waitFor(() => {
+      expect(workspacePages.has('1')).toBe(false);
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('supports multi-selection with Shift key', async () => {
+    workspacePages.set('1', { title: 'Page 1', parentId: null, createdAt: 1, updatedAt: 1 });
+    workspacePages.set('2', { title: 'Page 2', parentId: null, createdAt: 2, updatedAt: 2 });
+    workspacePages.set('3', { title: 'Page 3', parentId: null, createdAt: 3, updatedAt: 3 });
+    useWorkspaceStore.setState({ pages: workspacePages.toJSON() });
+
+    render(<Sidebar />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Page 1')).toBeInTheDocument();
+      expect(screen.getByText('Page 3')).toBeInTheDocument();
+    });
+
+    // Click Page 1 first
+    fireEvent.click(screen.getByText('Page 1'));
+
+    // Shift-click Page 3 to select 1, 2, and 3
+    fireEvent.click(screen.getByText('Page 3'), { shiftKey: true });
+
+    await waitFor(() => {
+      expect(screen.getByText('3 selected')).toBeInTheDocument();
+    });
+  });
 });
+
