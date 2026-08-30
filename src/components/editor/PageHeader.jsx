@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react'
-import { Image as ImageIcon, Smile } from 'lucide-react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
+import { Image as ImageIcon, Smile, Search } from 'lucide-react'
 import { updateWorkspacePage } from '../../store/workspace'
+import { EMOJI_CATEGORIES, ALL_EMOJIS } from './emojiData'
 
 // Extract first grapheme (compound emoji aware)
 function extractFirstEmoji(str) {
@@ -16,10 +17,9 @@ function extractFirstEmoji(str) {
 
 export default function PageHeader({ activePageId, title, emoji, coverImage, titleInputRef, editor }) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
-  const [inputValue, setInputValue] = useState('')
+  const [emojiSearch, setEmojiSearch] = useState('')
+  const [activeCategory, setActiveCategory] = useState('all')
   const emojiInputRef = useRef(null)
-
-  const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
   const updatePage = (changes) => {
     if (activePageId) {
@@ -39,10 +39,11 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
     }
   }
 
-  // Focus input when popover opens
+  // Focus custom input when popover opens
   useEffect(() => {
     if (showEmojiPicker) {
-      setInputValue('')
+      setEmojiSearch('')
+      setActiveCategory('all')
       const timer = setTimeout(() => {
         emojiInputRef.current?.focus()
       }, 50)
@@ -50,16 +51,30 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
     }
   }, [showEmojiPicker])
 
-  // Handle native emoji entry
-  const handleInputChange = (e) => {
-    const val = e.target.value
-    setInputValue(val)
+  // Handle custom emoji input (typing, pasting, or OS emoji keyboard)
+  const handleCustomInput = (val) => {
+    setEmojiSearch(val)
     const detected = extractFirstEmoji(val)
-    if (detected) {
+    if (detected && (detected.length > 1 || detected.codePointAt(0) > 255)) {
       updatePage({ emoji: detected })
       setShowEmojiPicker(false)
     }
   }
+
+  // Filtered categorized emojis
+  const displayCategories = useMemo(() => {
+    const trimmed = emojiSearch.trim()
+    if (trimmed) {
+      const matched = ALL_EMOJIS.filter(em => em.includes(trimmed))
+      return [{ name: 'Search Results', id: 'search', emojis: matched }]
+    }
+
+    if (activeCategory === 'all') {
+      return EMOJI_CATEGORIES
+    }
+
+    return EMOJI_CATEGORIES.filter(cat => cat.id === activeCategory)
+  }, [emojiSearch, activeCategory])
 
   return (
     <>
@@ -110,41 +125,77 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
         )}
         
         {showEmojiPicker && (
-          <div className="emoji-picker-popover native-emoji-popover" role="dialog" aria-label="Device Emoji Picker">
-            <div className="native-emoji-header">
-              <span className="native-emoji-title">Select Emoji</span>
-            </div>
-            
-            <div className="native-emoji-input-wrapper">
+          <div className="emoji-picker-popover" role="dialog" aria-label="Emoji picker">
+            <div className="emoji-custom-input-wrapper">
+              <Search size={14} style={{ color: 'var(--text-muted)' }} aria-hidden="true" />
               <input
                 ref={emojiInputRef}
                 type="text"
-                className="native-emoji-input"
-                placeholder="Paste or type native emoji..."
-                value={inputValue}
-                onChange={handleInputChange}
+                className="emoji-custom-input"
+                placeholder="Search or paste emoji..."
+                value={emojiSearch}
+                onChange={(e) => handleCustomInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
+                  if (e.key === 'Enter') {
+                    const detected = extractFirstEmoji(emojiSearch)
+                    if (detected) {
+                      updatePage({ emoji: detected })
+                      setShowEmojiPicker(false)
+                    }
+                  } else if (e.key === 'Escape') {
                     setShowEmojiPicker(false)
                   }
                 }}
-                aria-label="Native emoji input"
+                aria-label="Search or paste emoji"
               />
             </div>
 
-            <div className="native-emoji-instructions">
-              {isMac ? (
-                <span>Press <kbd>Cmd</kbd> + <kbd>Ctrl</kbd> + <kbd>Space</kbd> to open native emoji palette</span>
-              ) : (
-                <span>Press <kbd>Win</kbd> + <kbd>.</kbd> to open native emoji palette</span>
-              )}
+            <div className="emoji-category-tabs">
+              <button
+                className={`emoji-category-tab ${activeCategory === 'all' ? 'is-active' : ''}`}
+                onClick={() => { setActiveCategory('all'); setEmojiSearch(''); }}
+                title="All Emojis (1400+)"
+              >
+                ⭐️
+              </button>
+              {EMOJI_CATEGORIES.map(cat => (
+                <button
+                  key={cat.id}
+                  className={`emoji-category-tab ${activeCategory === cat.id ? 'is-active' : ''}`}
+                  onClick={() => { setActiveCategory(cat.id); setEmojiSearch(''); }}
+                  title={cat.name}
+                >
+                  {cat.icon}
+                </button>
+              ))}
             </div>
 
-            <div className="native-emoji-actions">
-              {emoji && (
-                <button className="emoji-picker-action" onClick={() => { updatePage({ emoji: '' }); setShowEmojiPicker(false); }}>Remove Icon</button>
-              )}
-              <button className="emoji-picker-action" onClick={() => setShowEmojiPicker(false)}>Cancel</button>
+            <div className="emoji-picker-hint">Press Win + . (Windows) or Cmd + Ctrl + Space (Mac)</div>
+            
+            <div className="emoji-grid-container">
+              {displayCategories.map(cat => (
+                <div key={cat.id || cat.name} style={{ marginBottom: '8px' }}>
+                  <div className="emoji-category-header">{cat.name} ({cat.emojis.length})</div>
+                  <div className="emoji-grid" role="listbox">
+                    {cat.emojis.map((em, idx) => (
+                      <button 
+                        key={idx} 
+                        className={`emoji-btn ${emoji === em ? 'is-active' : ''}`}
+                        role="option"
+                        aria-selected={emoji === em}
+                        onClick={() => { updatePage({ emoji: em }); setShowEmojiPicker(false); }}
+                      >
+                        {em}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', borderTop: '1px solid var(--border-color)', paddingTop: '6px' }}>
+              <button className="emoji-picker-action" onClick={() => { updatePage({ emoji: '' }); setShowEmojiPicker(false); }}>Remove</button>
+              <button className="emoji-picker-action" onClick={() => setShowEmojiPicker(false)}>Close</button>
             </div>
           </div>
         )}
@@ -169,5 +220,6 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
     </>
   )
 }
+
 
 
