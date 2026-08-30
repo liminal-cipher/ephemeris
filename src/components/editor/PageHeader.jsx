@@ -1,24 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { Image as ImageIcon, Smile, Search } from 'lucide-react'
 import { updateWorkspacePage } from '../../store/workspace'
-
-const EMOJI_CATEGORIES = [
-  // Common & Smileys
-  '📄', '💡', '📝', '🚀', '⭐️', '📌', '📚', '🛠️', '👋', '🎯', '✨', '🔥',
-  '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😉', '😊', '😇',
-  '🥰', '😍', '🤩', '😘', '😋', '😎', '🥳', '🤔', '🤫', '🤗', '🫡', '🥹',
-  // Work & Productivity
-  '📁', '📂', '📑', '📊', '📈', '📋', '📍', '📎', '✏️', '✒️', '📦', '💻',
-  '🖥️', '📱', '⌨️', '🖱️', '⚙️', '🔬', '🔭', '📡', '🛡️', '🔑', '🔒', '🏷️',
-  // Ideas & Tech
-  '⚡️', '🌟', '🪐', '🌌', '🛸', '🛰️', '🤖', '👾', '🎮', '🔋', '🔌', '🧬',
-  '🧪', '🧭', '🔮', '🏆', '🥇', '🧩', '🚩', '🏁', '🎨', '🎬', '🎤', '🎧',
-  // Nature & Animals
-  '🌱', '🌲', '🌳', '🌴', '🍀', '🌸', '🌺', '🌻', '🍎', '☕️', '🍵', '🌍',
-  '🌎', '🌏', '🌕', '☀️', '🌈', '🌧️', '❄️', '🐱', '🐶', '🦊', '🦁', '🦉',
-  // Hearts & Symbols
-  '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💖', '💯', '✅'
-]
+import { EMOJI_CATEGORIES, ALL_EMOJIS } from './emojiData'
 
 // Extract first grapheme (compound emoji aware)
 function extractFirstEmoji(str) {
@@ -35,6 +18,7 @@ function extractFirstEmoji(str) {
 export default function PageHeader({ activePageId, title, emoji, coverImage, titleInputRef, editor }) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [emojiSearch, setEmojiSearch] = useState('')
+  const [activeCategory, setActiveCategory] = useState('all')
   const emojiInputRef = useRef(null)
 
   const updatePage = (changes) => {
@@ -59,6 +43,7 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
   useEffect(() => {
     if (showEmojiPicker) {
       setEmojiSearch('')
+      setActiveCategory('all')
       const timer = setTimeout(() => {
         emojiInputRef.current?.focus()
       }, 50)
@@ -70,18 +55,26 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
   const handleCustomInput = (val) => {
     setEmojiSearch(val)
     const detected = extractFirstEmoji(val)
-    // Check if the input contains a non-ascii character or emoji symbol
     if (detected && (detected.length > 1 || detected.codePointAt(0) > 255)) {
       updatePage({ emoji: detected })
       setShowEmojiPicker(false)
     }
   }
 
-  const filteredEmojis = useMemo(() => {
+  // Filtered categorized emojis
+  const displayCategories = useMemo(() => {
     const trimmed = emojiSearch.trim()
-    if (!trimmed) return EMOJI_CATEGORIES
-    return EMOJI_CATEGORIES.filter(em => em.includes(trimmed))
-  }, [emojiSearch])
+    if (trimmed) {
+      const matched = ALL_EMOJIS.filter(em => em.includes(trimmed))
+      return [{ name: 'Search Results', id: 'search', emojis: matched }]
+    }
+
+    if (activeCategory === 'all') {
+      return EMOJI_CATEGORIES
+    }
+
+    return EMOJI_CATEGORIES.filter(cat => cat.id === activeCategory)
+  }, [emojiSearch, activeCategory])
 
   return (
     <>
@@ -156,22 +149,48 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
                 aria-label="Custom emoji input"
               />
             </div>
+
+            <div className="emoji-category-tabs">
+              <button
+                className={`emoji-category-tab ${activeCategory === 'all' ? 'is-active' : ''}`}
+                onClick={() => { setActiveCategory('all'); setEmojiSearch(''); }}
+                title="All Emojis"
+              >
+                ⭐️
+              </button>
+              {EMOJI_CATEGORIES.map(cat => (
+                <button
+                  key={cat.id}
+                  className={`emoji-category-tab ${activeCategory === cat.id ? 'is-active' : ''}`}
+                  onClick={() => { setActiveCategory(cat.id); setEmojiSearch(''); }}
+                  title={cat.name}
+                >
+                  {cat.icon}
+                </button>
+              ))}
+            </div>
+
             <div className="emoji-picker-hint">Press Win + . (Windows) or Cmd + Ctrl + Space (Mac)</div>
             
             <div className="emoji-grid-container">
-              <div className="emoji-grid" role="listbox">
-                {filteredEmojis.map((em, idx) => (
-                  <button 
-                    key={idx} 
-                    className={`emoji-btn ${emoji === em ? 'is-active' : ''}`}
-                    role="option"
-                    aria-selected={emoji === em}
-                    onClick={() => { updatePage({ emoji: em }); setShowEmojiPicker(false); }}
-                  >
-                    {em}
-                  </button>
-                ))}
-              </div>
+              {displayCategories.map(cat => (
+                <div key={cat.id || cat.name} style={{ marginBottom: '8px' }}>
+                  <div className="emoji-category-header">{cat.name}</div>
+                  <div className="emoji-grid" role="listbox">
+                    {cat.emojis.map((em, idx) => (
+                      <button 
+                        key={idx} 
+                        className={`emoji-btn ${emoji === em ? 'is-active' : ''}`}
+                        role="option"
+                        aria-selected={emoji === em}
+                        onClick={() => { updatePage({ emoji: em }); setShowEmojiPicker(false); }}
+                      >
+                        {em}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', borderTop: '1px solid var(--border-color)', paddingTop: '6px' }}>
@@ -201,4 +220,5 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
     </>
   )
 }
+
 
