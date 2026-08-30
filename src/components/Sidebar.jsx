@@ -1,4 +1,4 @@
-import { useWorkspaceStore, createWorkspacePage } from '../store/workspace'
+import { usePagesList, useWorkspaceStore, createWorkspacePage } from '../store/workspace'
 import { useStore } from '../store/useStore'
 import { FileText, Plus, Download, Upload, Search, Network } from 'lucide-react'
 import { exportWorkspace, importWorkspace } from '../utils/exportImport'
@@ -6,9 +6,8 @@ import { useRef, useState, useEffect } from 'react'
 import './Sidebar.css'
 
 export default function Sidebar({ onOpenGraph }) {
-  const getPagesArray = useWorkspaceStore(state => state.getPagesArray)
+  const pages = usePagesList()
   const isSynced = useWorkspaceStore(state => state.isSynced)
-  const pages = getPagesArray()
   const { activePageId, setActivePageId } = useStore()
   const fileInputRef = useRef(null)
   const [searchQuery, setSearchQuery] = useState('')

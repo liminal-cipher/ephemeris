@@ -2,7 +2,7 @@ import { useEffect, useRef, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useStore } from '../store/useStore'
-import { useWorkspaceStore, deleteWorkspacePage } from '../store/workspace'
+import { usePagesList, deleteWorkspacePage } from '../store/workspace'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Collaboration from '@tiptap/extension-collaboration'
@@ -26,9 +26,7 @@ import EditorToolbar from './editor/EditorToolbar'
 
 export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   const { activePageId, setActivePageId } = useStore()
-  
-  const getPagesArray = useWorkspaceStore(state => state.getPagesArray)
-  const allPages = getPagesArray()
+  const allPages = usePagesList()
   
   const page = useMemo(() => {
     return allPages ? allPages.find(p => p.id === activePageId) : null
