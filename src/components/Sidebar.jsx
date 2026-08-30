@@ -1,9 +1,21 @@
-import { usePagesList, useWorkspaceStore, createWorkspacePage, deleteWorkspacePage } from '../store/workspace'
+import { usePagesList, useWorkspaceStore, createWorkspacePage, updateWorkspacePage, deleteWorkspacePage } from '../store/workspace'
 import { useStore } from '../store/useStore'
-import { FileText, Plus, Download, Upload, Search, Network, Trash2, X } from 'lucide-react'
+import { FileText, Plus, Download, Upload, Search, Network, Trash2, X, ChevronRight, ChevronDown } from 'lucide-react'
 import { exportWorkspace, importWorkspace } from '../utils/exportImport'
 import { useRef, useState, useEffect } from 'react'
 import './Sidebar.css'
+
+// Check if targetId is descendant of parentCandidateId
+function isDescendant(parentCandidateId, targetId, pagesList) {
+  if (!parentCandidateId || !targetId) return false
+  if (parentCandidateId === targetId) return true
+  let curr = pagesList.find(p => p.id === targetId)
+  while (curr && curr.parentId) {
+    if (curr.parentId === parentCandidateId) return true
+    curr = pagesList.find(p => p.id === curr.parentId)
+  }
+  return false
+}
 
 export default function Sidebar({ onOpenGraph }) {
   const pages = usePagesList()
@@ -13,12 +25,26 @@ export default function Sidebar({ onOpenGraph }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedPageIds, setSelectedPageIds] = useState([])
   const [lastSelectedId, setLastSelectedId] = useState(null)
+  const [expandedPageIds, setExpandedPageIds] = useState([])
+  const [draggedPageId, setDraggedPageId] = useState(null)
+  const [dragOverPageId, setDragOverPageId] = useState(null)
+  const [dragOverRoot, setDragOverRoot] = useState(false)
 
   const handleCreateNewPage = (parentId = null) => {
     const id = createWorkspacePage(parentId)
     setActivePageId(id)
     setSelectedPageIds([id])
     setLastSelectedId(id)
+    if (parentId) {
+      setExpandedPageIds(prev => Array.from(new Set([...prev, parentId])))
+    }
+  }
+
+  const toggleExpand = (pageId, e) => {
+    e.stopPropagation()
+    setExpandedPageIds(prev => 
+      prev.includes(pageId) ? prev.filter(id => id !== pageId) : [...prev, pageId]
+    )
   }
 
   const handleImportClick = () => {
@@ -47,6 +73,21 @@ export default function Sidebar({ onOpenGraph }) {
     }
   }, [pages.length, activePageId, setActivePageId, isSynced])
 
+  // Automatically expand parent chain of active page
+  useEffect(() => {
+    if (activePageId && pages.length > 0) {
+      const parentsToExpand = []
+      let curr = pages.find(p => p.id === activePageId)
+      while (curr && curr.parentId) {
+        parentsToExpand.push(curr.parentId)
+        curr = pages.find(p => p.id === curr.parentId)
+      }
+      if (parentsToExpand.length > 0) {
+        setExpandedPageIds(prev => Array.from(new Set([...prev, ...parentsToExpand])))
+      }
+    }
+  }, [activePageId, pages])
+
   // Build tree for hierarchical rendering
   const buildTree = (pagesList) => {
     const tree = []
@@ -62,13 +103,13 @@ export default function Sidebar({ onOpenGraph }) {
     return tree
   }
 
-  // Get flattened visible order for Shift-click selection range
+  // Get flattened visible order for Shift-click selection range (respects collapsed state)
   const getVisibleIds = (treeNodes) => {
     const ids = []
     const traverse = (nodes) => {
       nodes.forEach(node => {
         ids.push(node.id)
-        if (node.children && node.children.length > 0) {
+        if (node.children && node.children.length > 0 && expandedPageIds.includes(node.id)) {
           traverse(node.children)
         }
       })
@@ -160,19 +201,74 @@ export default function Sidebar({ onOpenGraph }) {
     return pagesToRender.map(page => {
       const isSelected = selectedPageIds.includes(page.id)
       const isActive = activePageId === page.id
+      const hasChildren = page.children && page.children.length > 0
+      const isExpanded = expandedPageIds.includes(page.id)
+      const isDragOver = dragOverPageId === page.id
 
       return (
-        <div key={page.id}>
+        <div key={page.id} className="sidebar-tree-node">
           <div 
-            className={`sidebar-item ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`}
+            className={`sidebar-item ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''} ${isDragOver ? 'drag-over' : ''}`}
             onClick={(e) => handleItemClick(page.id, e)}
-            style={{ paddingLeft: `${depth * 1 + 1}rem` }}
+            style={{ paddingLeft: `${depth * 0.85 + 0.5}rem` }}
             role="treeitem"
             aria-selected={isSelected}
+            aria-expanded={hasChildren ? isExpanded : undefined}
             tabIndex={0}
+            draggable={true}
+            onDragStart={(e) => {
+              e.dataTransfer.setData('text/plain', page.id)
+              e.dataTransfer.effectAllowed = 'move'
+              setDraggedPageId(page.id)
+            }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              if (draggedPageId && draggedPageId !== page.id && !isDescendant(draggedPageId, page.id, pages)) {
+                e.dataTransfer.dropEffect = 'move'
+              }
+            }}
+            onDragEnter={(e) => {
+              e.preventDefault()
+              if (draggedPageId && draggedPageId !== page.id && !isDescendant(draggedPageId, page.id, pages)) {
+                setDragOverPageId(page.id)
+              }
+            }}
+            onDragLeave={() => {
+              if (dragOverPageId === page.id) {
+                setDragOverPageId(null)
+              }
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              const draggedId = e.dataTransfer.getData('text/plain') || draggedPageId
+              if (draggedId && draggedId !== page.id && !isDescendant(draggedId, page.id, pages)) {
+                updateWorkspacePage(draggedId, { parentId: page.id })
+                setExpandedPageIds(prev => Array.from(new Set([...prev, page.id])))
+              }
+              setDragOverPageId(null)
+              setDraggedPageId(null)
+            }}
+            onDragEnd={() => {
+              setDragOverPageId(null)
+              setDraggedPageId(null)
+              setDragOverRoot(false)
+            }}
           >
-            <span className="emoji">{page.emoji || <FileText size={16} />}</span>
+            {hasChildren ? (
+              <button 
+                className="tree-toggle-btn"
+                onClick={(e) => toggleExpand(page.id, e)}
+                aria-label={isExpanded ? 'Collapse sub-pages' : 'Expand sub-pages'}
+              >
+                {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              </button>
+            ) : (
+              <span className="tree-toggle-spacer" />
+            )}
+            
+            <span className="emoji">{page.emoji || <FileText size={15} />}</span>
             <span className="title">{page.title || 'Untitled'}</span>
+            
             <div className="item-actions">
               <button 
                 className="icon-btn-small" 
@@ -192,7 +288,7 @@ export default function Sidebar({ onOpenGraph }) {
               </button>
             </div>
           </div>
-          {page.children && page.children.length > 0 && renderPages(page.children, depth + 1)}
+          {hasChildren && isExpanded && renderPages(page.children, depth + 1)}
         </div>
       )
     })
@@ -272,7 +368,32 @@ export default function Sidebar({ onOpenGraph }) {
             <div className="empty-state" style={{ padding: '1rem', fontSize: '0.85rem' }}>No pages found.</div>
           )
         ) : (
-          renderPages(tree)
+          <>
+            {renderPages(tree)}
+            {draggedPageId && (
+              <div 
+                className={`sidebar-root-dropzone ${dragOverRoot ? 'is-drag-over' : ''}`}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'move'
+                  setDragOverRoot(true)
+                }}
+                onDragLeave={() => setDragOverRoot(false)}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  const draggedId = e.dataTransfer.getData('text/plain') || draggedPageId
+                  if (draggedId) {
+                    updateWorkspacePage(draggedId, { parentId: null })
+                  }
+                  setDragOverRoot(false)
+                  setDraggedPageId(null)
+                  setDragOverPageId(null)
+                }}
+              >
+                Move to root level
+              </div>
+            )}
+          </>
         )}
       </div>
       <div className="sidebar-footer" style={{ flexDirection: 'column', gap: '8px' }}>
@@ -303,4 +424,3 @@ export default function Sidebar({ onOpenGraph }) {
     </div>
   )
 }
-

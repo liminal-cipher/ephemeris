@@ -24,6 +24,7 @@ import { useEditorSync } from './editor/useEditorSync'
 import PageHeader from './editor/PageHeader'
 import BacklinksPanel from './editor/BacklinksPanel'
 import EditorToolbar from './editor/EditorToolbar'
+import SubPagesPanel from './editor/SubPagesPanel'
 
 export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   const { activePageId, setActivePageId } = useStore()
@@ -32,6 +33,18 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   const page = useMemo(() => {
     return allPages ? allPages.find(p => p.id === activePageId) : null
   }, [allPages, activePageId])
+
+  // Compute hierarchical breadcrumbs chain
+  const breadcrumbs = useMemo(() => {
+    if (!page || !allPages) return []
+    const trail = []
+    let curr = page
+    while (curr) {
+      trail.unshift(curr)
+      curr = curr.parentId ? allPages.find(p => p.id === curr.parentId) : null
+    }
+    return trail
+  }, [page, allPages])
 
   // Get content from Dexie for legacy fallback and backlinks
   const dexiePages = useLiveQuery(() => db.pages.toArray(), [])
@@ -80,31 +93,45 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
       ...(provider ? [
         CollaborationCursor.configure({
           provider: provider,
-          user: provider.awareness.getLocalState().user,
+          user: {
+            name: 'Anonymous User',
+            color: '#ffcc00',
+          },
         })
       ] : [])
-    ] : [
-      ...baseExtensions
-    ],
-    onUpdate: ({ editor }) => {
-      if (activePageId) {
+    ] : baseExtensions,
+  }, [ydoc, provider])
+
+  // Auto-save plain content to Dexie for backlinks and offline fallback
+  useEffect(() => {
+    if (ydoc && provider) {
+      const fragment = ydoc.getXmlFragment('default')
+      fragment.observeDeep(() => {
         if (editorTimeoutRef.current) {
           clearTimeout(editorTimeoutRef.current)
         }
-        // Snapshot to Dexie for GraphView, local search, and backlinks parsing
-        const content = JSON.stringify(editor.getJSON())
         editorTimeoutRef.current = setTimeout(async () => {
-          const numUpdated = await db.pages.update(activePageId, { 
-            content: content,
-            updatedAt: Date.now()
-          })
-          if (numUpdated === 0) {
-            await db.pages.add({ id: activePageId, content, updatedAt: Date.now() })
+          if (editor && activePageId) {
+            const json = editor.getJSON()
+            const content = JSON.stringify(json)
+            const numUpdated = await db.pages.update(activePageId, {
+              content,
+              updatedAt: Date.now()
+            })
+            if (numUpdated === 0) {
+              await db.pages.add({ id: activePageId, content, updatedAt: Date.now() })
+            }
           }
         }, 500)
+      })
+
+      return () => {
+        if (editorTimeoutRef.current) {
+          clearTimeout(editorTimeoutRef.current)
+        }
       }
     }
-  }, [ydoc, provider])
+  }, [ydoc, provider, editor, activePageId])
 
   const migratedPageIdsRef = useRef(new Set())
 
@@ -164,13 +191,27 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   return (
     <div className="page-editor-wrapper">
       <div className="top-nav" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
           {!sidebarOpen && (
             <button className="icon-btn" onClick={onToggleSidebar} aria-label="Open sidebar" aria-expanded={sidebarOpen}>
               <Menu size={20} aria-hidden="true" />
             </button>
           )}
-          <div className="breadcrumbs" aria-live="polite">{page.title || 'Untitled'}</div>
+          <nav className="breadcrumbs" aria-label="Breadcrumb hierarchy">
+            {breadcrumbs.map((crumb, idx) => (
+              <span key={crumb.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                {idx > 0 && <span className="breadcrumb-separator" aria-hidden="true">/</span>}
+                <button
+                  className={`breadcrumb-item ${crumb.id === page.id ? 'is-current' : ''}`}
+                  onClick={() => setActivePageId(crumb.id)}
+                  aria-current={crumb.id === page.id ? 'page' : undefined}
+                >
+                  {crumb.emoji && <span className="breadcrumb-emoji">{crumb.emoji}</span>}
+                  <span className="breadcrumb-text">{crumb.title || 'Untitled'}</span>
+                </button>
+              </span>
+            ))}
+          </nav>
         </div>
         <button className="icon-btn" onClick={handleDeletePage} title="Delete Page" style={{ color: 'var(--text-secondary)' }} aria-label="Delete Page">
           <Trash2 size={16} aria-hidden="true" />
@@ -193,6 +234,12 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
             <EditorContent editor={editor} className="tiptap-editor" />
           </div>
           
+          <SubPagesPanel 
+            activePageId={activePageId} 
+            allPages={allPages} 
+            setActivePageId={setActivePageId} 
+          />
+
           <BacklinksPanel 
             dexiePages={dexiePages} 
             allPages={allPages} 
