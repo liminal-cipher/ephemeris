@@ -72,16 +72,16 @@ Tests can be run with `npm run test`.
 
 ## Roadmap
 
-The shell of the app is complete with V3 refinements (Workspace CRDTs, unified panels, and Graph View). Future exploration will focus on maximizing the value of local-first notes:
-- **Performance Optimization**: Implement virtualized rendering for the sidebar tree to support workspaces scaling past thousands of notes smoothly.
-- **Enhanced Media Integration**: Support custom image URLs and Unsplash integrations for page covers alongside local file uploads.
-- **Multi-page Bulk Operations**: Enable dragging and re-parenting multi-selected notes simultaneously in the sidebar tree.
-- **Tiptap v3 Upgrade**: Transition to Tiptap 3.x ecosystem once its dependencies and collaboration APIs stabilize.
-- **Asynchronous Sync (Relay Server)**: Implement a lightweight encrypted relay (e.g. `y-websocket`) to allow peers to sync changes even if they aren't online at the same time.
+- [x] **Local-first core & CRDTs**: Offline workspace management with Yjs CRDTs, unified panels, and Graph View.
+- [ ] **Performance optimization**: Virtualized rendering for the sidebar tree to support workspaces scaling past thousands of notes smoothly.
+- [ ] **Enhanced media integration**: Custom image URLs and Unsplash integrations for page covers alongside local file uploads.
+- [ ] **Multi-page bulk operations**: Dragging and re-parenting multi-selected notes simultaneously in the sidebar tree.
+- [ ] **Tiptap v3 upgrade**: Transition to Tiptap 3.x ecosystem once dependencies and collaboration APIs stabilize.
+- [ ] **Asynchronous sync (Relay Server)**: Lightweight encrypted relay (e.g. `y-websocket`) for asynchronous peer synchronization.
 
 ## Status
 
-Active. Local development resumed. Last updated 2026-08-30.
+In progress. Local development resumed. Last updated 2026-08-30.
 
 ## License
 
