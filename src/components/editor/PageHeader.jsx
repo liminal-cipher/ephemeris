@@ -1,8 +1,19 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { Image as ImageIcon, Smile, Search, Upload, Link as LinkIcon, Sparkles } from 'lucide-react'
+import { Image as ImageIcon, Smile, Search, Upload, Link as LinkIcon } from 'lucide-react'
 import { updateWorkspacePage } from '../../store/workspace'
 import { EMOJI_CATEGORIES, ALL_EMOJIS } from './emojiData'
 import PageIcon, { isImageIcon } from '../common/PageIcon'
+
+const UNSPLASH_PRESETS = [
+  'https://images.unsplash.com/photo-1506744626753-1396e00185c6?q=80&w=1200&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1511884642898-4c92249e20b6?q=80&w=1200&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1473448912268-2022ce9509d8?q=80&w=1200&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1200&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1513531926349-466f15ec8ce7?q=80&w=1200&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=1200&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?q=80&w=1200&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1507608616759-54f48f0af0ee?q=80&w=1200&auto=format&fit=crop'
+]
 
 // Extract first grapheme (compound emoji aware)
 function extractFirstEmoji(str) {
@@ -19,12 +30,16 @@ function extractFirstEmoji(str) {
 
 export default function PageHeader({ activePageId, title, emoji, coverImage, titleInputRef, editor }) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [showCoverPicker, setShowCoverPicker] = useState(false)
   const [mainTab, setMainTab] = useState('emojis') // 'emojis' | 'custom' | 'image'
+  const [coverTab, setCoverTab] = useState('gallery') // 'gallery' | 'upload' | 'link'
   const [emojiSearch, setEmojiSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState('smileys')
   const [iconUrlInput, setIconUrlInput] = useState('')
+  const [coverUrlInput, setCoverUrlInput] = useState('')
   const emojiInputRef = useRef(null)
   const iconFileInputRef = useRef(null)
+  const coverFileInputRef = useRef(null)
 
   // Custom Saved Emoji & Icon Library from localStorage
   const [customLibrary, setCustomLibrary] = useState(() => {
@@ -70,15 +85,31 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
   }
 
   const handleCoverUpload = (e) => {
-    const file = e.target.files[0]
+    const file = e.target.files?.[0]
     if (file) {
       const reader = new FileReader()
       reader.onloadend = () => {
         const base64 = reader.result
         updatePage({ coverImage: base64 })
+        setShowCoverPicker(false)
       }
       reader.readAsDataURL(file)
     }
+  }
+
+  const handleCoverUrlSubmit = (e) => {
+    e.preventDefault()
+    const trimmed = coverUrlInput.trim()
+    if (trimmed) {
+      updatePage({ coverImage: trimmed })
+      setCoverUrlInput('')
+      setShowCoverPicker(false)
+    }
+  }
+
+  const getRandomCover = () => {
+    const randomIndex = Math.floor(Math.random() * UNSPLASH_PRESETS.length)
+    updatePage({ coverImage: UNSPLASH_PRESETS[randomIndex] })
   }
 
   // Handle custom image file upload for icon
@@ -148,22 +179,34 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
       {coverImage && (
         <div className="cover-image-container">
           <img src={coverImage} alt="Page cover" className="cover-image" />
-          <button 
-            className="change-cover-btn" 
-            onClick={() => updatePage({ coverImage: '' })}
-            aria-label="Remove cover image"
-          >
-            Remove Cover
-          </button>
+          <div className="cover-actions-overlay">
+            <button 
+              className="change-cover-btn" 
+              onClick={() => setShowCoverPicker(!showCoverPicker)}
+              aria-label="Change cover image"
+            >
+              Change Cover
+            </button>
+            <button 
+              className="change-cover-btn remove-cover-btn" 
+              onClick={() => updatePage({ coverImage: '' })}
+              aria-label="Remove cover image"
+            >
+              Remove
+            </button>
+          </div>
         </div>
       )}
       
       {!coverImage && (
         <div className="page-actions-top" role="toolbar" aria-label="Page actions">
-          <label className="page-action-btn" tabIndex="0" role="button" aria-label="Add cover image">
+          <button 
+            className="page-action-btn" 
+            onClick={getRandomCover}
+            aria-label="Add cover image"
+          >
             <ImageIcon size={16} aria-hidden="true" /> Add cover
-            <input type="file" accept="image/*" hidden onChange={handleCoverUpload} />
-          </label>
+          </button>
           {!emoji && (
             <button 
               className="page-action-btn" 
@@ -174,6 +217,107 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
               <Smile size={16} aria-hidden="true" /> Add icon
             </button>
           )}
+        </div>
+      )}
+
+      {showCoverPicker && (
+        <div className="cover-picker-popover" role="dialog" aria-label="Cover picker">
+          <div className="emoji-main-tabs" role="tablist">
+            <button
+              role="tab"
+              aria-selected={coverTab === 'gallery'}
+              className={`emoji-main-tab ${coverTab === 'gallery' ? 'is-active' : ''}`}
+              onClick={() => setCoverTab('gallery')}
+            >
+              Gallery
+            </button>
+            <button
+              role="tab"
+              aria-selected={coverTab === 'upload'}
+              className={`emoji-main-tab ${coverTab === 'upload' ? 'is-active' : ''}`}
+              onClick={() => setCoverTab('upload')}
+            >
+              Upload
+            </button>
+            <button
+              role="tab"
+              aria-selected={coverTab === 'link'}
+              className={`emoji-main-tab ${coverTab === 'link' ? 'is-active' : ''}`}
+              onClick={() => setCoverTab('link')}
+            >
+              Link
+            </button>
+          </div>
+
+          <div className="emoji-grid-container" style={{ maxHeight: '300px', marginTop: '0.5rem' }}>
+            {coverTab === 'gallery' && (
+              <div className="cover-gallery-grid">
+                {UNSPLASH_PRESETS.map((url, idx) => (
+                  <button
+                    key={idx}
+                    className="cover-gallery-item"
+                    onClick={() => {
+                      updatePage({ coverImage: url })
+                      setShowCoverPicker(false)
+                    }}
+                  >
+                    <img src={url} alt={`Cover preset ${idx + 1}`} loading="lazy" />
+                  </button>
+                ))}
+              </div>
+            )}
+            
+            {coverTab === 'upload' && (
+              <div className="custom-icon-upload-panel">
+                <div className="custom-icon-group">
+                  <span className="custom-icon-label">Upload Image File</span>
+                  <button 
+                    type="button" 
+                    className="custom-icon-upload-trigger"
+                    onClick={() => coverFileInputRef.current?.click()}
+                  >
+                    <Upload size={15} aria-hidden="true" /> Choose an image
+                  </button>
+                  <input 
+                    ref={coverFileInputRef}
+                    type="file" 
+                    accept="image/*" 
+                    style={{ display: 'none' }}
+                    onChange={handleCoverUpload}
+                  />
+                  <span className="custom-icon-hint">Recommended size: 1500x600 pixels</span>
+                </div>
+              </div>
+            )}
+
+            {coverTab === 'link' && (
+              <form onSubmit={handleCoverUrlSubmit} className="custom-icon-upload-panel" style={{ paddingTop: '1rem' }}>
+                <span className="custom-icon-label">Image URL</span>
+                <div className="emoji-custom-input-wrapper">
+                  <LinkIcon size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} aria-hidden="true" />
+                  <input 
+                    type="url" 
+                    placeholder="https://example.com/cover.jpg"
+                    value={coverUrlInput}
+                    onChange={(e) => setCoverUrlInput(e.target.value)}
+                    className="emoji-custom-input"
+                    aria-label="Image cover URL"
+                  />
+                  <button 
+                    type="submit" 
+                    className="emoji-save-btn" 
+                    disabled={!coverUrlInput.trim()}
+                  >
+                    Apply
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+          
+          <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '6px', marginTop: '6px' }}>
+            <button className="emoji-picker-action" onClick={() => setShowCoverPicker(false)}>Close</button>
+          </div>
         </div>
       )}
 
