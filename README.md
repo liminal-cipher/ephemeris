@@ -74,7 +74,7 @@ Tests can be run with `npm run test`.
 
 - [x] **Local-first core & CRDTs**: Offline workspace management with Yjs CRDTs, unified panels, and Graph View.
 - [ ] **Performance optimization**: Virtualized rendering for the sidebar tree to support workspaces scaling past thousands of notes smoothly.
-- [ ] **Enhanced media integration**: Custom image URLs and Unsplash integrations for page covers alongside local file uploads.
+- [x] **Cover media options**: Local image uploads, custom image URLs, and curated Unsplash presets for page covers.
 - [ ] **Multi-page bulk operations**: Dragging and re-parenting multi-selected notes simultaneously in the sidebar tree.
 - [ ] **Tiptap v3 upgrade**: Transition to Tiptap 3.x ecosystem once dependencies and collaboration APIs stabilize.
 - [ ] **Asynchronous sync (Relay Server)**: Lightweight encrypted relay (e.g. `y-websocket`) for asynchronous peer synchronization.
