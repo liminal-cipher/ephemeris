@@ -1,6 +1,6 @@
 # Ephemeris
 
-> A local-first note workspace that keeps every page in the browser and does not depend on a centralized application backend.
+> A local-first note workspace that keeps every page in the browser and does not depend on a centralised application backend.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
@@ -11,16 +11,16 @@
 
 I wanted a Notion I owned. Not a cheaper Notion or a faster one, but one where the notes sit on my machine and keep working when a company changes its pricing, its terms, or its mind about staying in business. The long-term idea was to put a model on top of my own notes rather than hand them to someone else's.
 
-Ephemeris is the first cut at the substrate that would need: a workspace where pages, covers, and icons live in the browser's own database, with no account and no centralized application database in the write path.
+Ephemeris is the first cut at the substrate that would need: a workspace where pages, covers, and icons live in the browser's own database, with no account and no centralised application database in the write path.
 
 ## What It Does
 
-- **Hierarchical Document Model:** Organize notes with infinitely nested sub-pages, drag-and-drop re-parenting, collapsible tree toggles, and interactive breadcrumbs.
+- **Hierarchical Document Model:** Organise notes with infinitely nested sub-pages, drag-and-drop re-parenting, collapsible tree toggles, and interactive breadcrumbs.
 - **Collaborative Editing:** Edit notes with peers in real time over WebRTC without sending document contents through an application backend. WebRTC still uses signaling servers to establish peer connections.
 - **Unified Details Panel:** Access sub-pages and backlinks via a dockable panel (bottom or right sidebar) to maintain context without cluttering the editor.
-- **Graph View:** Visualize connections between pages linked via `[[wiki-link]]` syntax on an interactive 2D physics graph.
+- **Graph View:** Visualise connections between pages linked via `[[wiki-link]]` syntax on an interactive 2D physics graph.
 - **Rich Text Editing:** Write using Tiptap's markdown-style input rules and keyboard shortcuts, complete with mathematical formulas (KaTeX), code blocks, and double-click whitespace trimming.
-- **Customization:** Assign pages an icon (from a full 1,484 Unicode catalog, uploaded images, or remote URLs) and a cover image, stored inline.
+- **Customisation:** Assign pages an icon (from a full 1,484 Unicode catalogue, uploaded images, or remote URLs) and a cover image, stored inline.
 - **Offline & Portable:** Persist every change automatically using CRDTs (`y-indexeddb`) and Dexie fallback snapshots. Export the entire workspace to JSON for true data portability.
 
 There is no sign-up or application backend, and no network request is required to write. Opening the app offline behaves exactly the same as opening it online for local editing.
@@ -73,11 +73,11 @@ Tests can be run with `npm run test`.
 ## Roadmap
 
 - [x] **Local-first core & CRDTs**: Offline workspace management with Yjs CRDTs, unified panels, and Graph View.
-- [ ] **Performance optimization**: Virtualized rendering for the sidebar tree to support workspaces scaling past thousands of notes smoothly.
+- [ ] **Performance optimisation**: Virtualised rendering for the sidebar tree to support workspaces scaling past thousands of notes smoothly.
 - [x] **Cover media options**: Local image uploads, custom image URLs, and curated Unsplash presets for page covers.
 - [ ] **Multi-page bulk operations**: Dragging and re-parenting multi-selected notes simultaneously in the sidebar tree.
-- [ ] **Tiptap v3 upgrade**: Transition to Tiptap 3.x ecosystem once dependencies and collaboration APIs stabilize.
-- [ ] **Asynchronous sync (Relay Server)**: Lightweight encrypted relay (e.g. `y-websocket`) for asynchronous peer synchronization.
+- [ ] **Tiptap v3 upgrade**: Transition to Tiptap 3.x ecosystem once dependencies and collaboration APIs stabilise.
+- [ ] **Asynchronous sync (Relay Server)**: Lightweight encrypted relay (e.g. `y-websocket`) for asynchronous peer synchronisation.
 
 ## Status
 
