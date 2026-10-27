@@ -6,7 +6,7 @@ import PageIcon from '../common/PageIcon'
 export default function BacklinksPanel({ dexiePages, allPages, activePageId, setActivePageId }) {
   const backlinks = useMemo(() => {
     if (!dexiePages || !activePageId) return []
-    const { edges } = extractLinksFromPages(dexiePages)
+    const { edges } = extractLinksFromPages(allPages.map(page => ({ ...page, content: dexiePages.find(row => String(row.id) === page.id)?.content })))
     const incomingEdgeSourceIds = edges.filter(e => e.target === activePageId || e.target === Number(activePageId)).map(e => e.source)
     const uniqueSourceIds = [...new Set(incomingEdgeSourceIds)]
     return uniqueSourceIds.map(id => allPages.find(p => p.id === id || p.id === String(id))).filter(Boolean)

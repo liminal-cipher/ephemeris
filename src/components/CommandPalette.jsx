@@ -91,7 +91,7 @@ export default function CommandPalette() {
         snippet,
         isContentMatch: contentMatch && !titleMatch
       };
-    }).filter(Boolean);
+    }).filter(Boolean).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   }, [pages, dexiePages, query]);
 
   // Reset index when query or filtered results change

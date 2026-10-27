@@ -2,6 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { extractLinksFromPages, extractTextFromJson } from './linkParser';
 
 describe('linkParser', () => {
+  it('resolves UUID mentions and excludes dangling links to deleted notes', () => {
+    const pages = [
+      { id: 'uuid-a', title: 'A', content: JSON.stringify({ type: 'doc', content: [
+        { type: 'mention', attrs: { id: 'uuid-b' } },
+        { type: 'mention', attrs: { id: 'missing' } },
+      ] }) },
+      { id: 'uuid-b', title: 'B' },
+    ]
+    expect(extractLinksFromPages(pages).edges).toEqual([{ source: 'uuid-a', target: 'uuid-b' }])
+  })
   it('extracts plain text from Tiptap JSON', () => {
     const json = {
       type: 'doc',

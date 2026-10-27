@@ -29,9 +29,9 @@ export default function GraphView({ onClose }) {
     window.addEventListener('resize', handleResize)
     handleResize() 
     
-    setTimeout(handleResize, 100)
+    const timer = setTimeout(handleResize, 100)
     
-    return () => window.removeEventListener('resize', handleResize)
+    return () => { clearTimeout(timer); window.removeEventListener('resize', handleResize) }
   }, [])
 
   const mergedPages = useMemo(() => {
@@ -42,7 +42,10 @@ export default function GraphView({ onClose }) {
     })
   }, [workspacePages, dexiePages])
 
-  const graphData = mergedPages.length > 0 ? extractLinksFromPages(mergedPages) : { nodes: [], edges: [] }
+  const graphData = useMemo(() => {
+    const { nodes, edges } = extractLinksFromPages(mergedPages)
+    return { nodes, links: edges }
+  }, [mergedPages])
 
   const handleNodeClick = (node) => {
     setActivePageId(node.id)
@@ -80,7 +83,7 @@ export default function GraphView({ onClose }) {
         <button className="icon-btn" onClick={onClose}><X size={20}/></button>
       </div>
       <div className="graph-body">
-        {pages && (
+        {(
           <ForceGraph2D
             ref={fgRef}
             width={dimensions.width}
