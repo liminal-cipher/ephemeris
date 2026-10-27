@@ -1,3 +1,5 @@
+import SyncSettings from './SyncSettings'
+import RecoveryPanel from './RecoveryPanel'
 import { usePagesList, useWorkspaceStore, createWorkspacePage, updateWorkspacePage, deleteWorkspacePage } from '../store/workspace'
 import { useStore } from '../store/useStore'
 import { showConfirm, showToast } from '../store/dialogStore'
@@ -12,7 +14,9 @@ function isDescendant(parentCandidateId, targetId, pagesList) {
   if (!parentCandidateId || !targetId) return false
   if (parentCandidateId === targetId) return true
   let curr = pagesList.find(p => p.id === targetId)
-  while (curr && curr.parentId) {
+  const seen = new Set()
+  while (curr && curr.parentId && !seen.has(curr.id)) {
+    seen.add(curr.id)
     if (curr.parentId === parentCandidateId) return true
     curr = pagesList.find(p => p.id === curr.parentId)
   }
@@ -80,7 +84,9 @@ export default function Sidebar({ onOpenGraph, onToggleSidebar }) {
     if (activePageId && pages.length > 0) {
       const parentsToExpand = []
       let curr = pages.find(p => p.id === activePageId)
-      while (curr && curr.parentId) {
+      const seen = new Set()
+  while (curr && curr.parentId && !seen.has(curr.id)) {
+    seen.add(curr.id)
         parentsToExpand.push(curr.parentId)
         curr = pages.find(p => p.id === curr.parentId)
       }
@@ -168,8 +174,9 @@ export default function Sidebar({ onOpenGraph, onToggleSidebar }) {
       confirmText: 'Delete',
       isDanger: true,
       showNeverAskKey: 'ephemeris_skip_delete_confirm',
-      onConfirm: () => {
-        deleteWorkspacePage(pageId)
+      onConfirm: async () => {
+        try { await deleteWorkspacePage(pageId) }
+        catch (error) { showToast(`Delete failed: ${error.message}`, 'error'); return }
         if (activePageId === pageId) {
           const remaining = pages.filter(p => p.id !== pageId)
           setActivePageId(remaining.length > 0 ? remaining[0].id : null)
@@ -190,8 +197,9 @@ export default function Sidebar({ onOpenGraph, onToggleSidebar }) {
       confirmText: `Delete ${count} Pages`,
       isDanger: true,
       showNeverAskKey: 'ephemeris_skip_delete_confirm',
-      onConfirm: () => {
-        selectedPageIds.forEach(id => deleteWorkspacePage(id))
+      onConfirm: async () => {
+        try { for (const id of selectedPageIds) await deleteWorkspacePage(id) }
+        catch (error) { showToast(`Delete failed: ${error.message}`, 'error'); return }
         const remaining = pages.filter(p => !selectedPageIds.includes(p.id))
         setActivePageId(remaining.length > 0 ? remaining[0].id : null)
         setSelectedPageIds([])
@@ -429,6 +437,8 @@ export default function Sidebar({ onOpenGraph, onToggleSidebar }) {
           </>
         )}
       </div>
+      <RecoveryPanel />
+      <SyncSettings />
       <div className="sidebar-footer" style={{ flexDirection: 'column', gap: '8px' }}>
         <button className="new-page-btn" onClick={() => handleCreateNewPage(null)}>
           <Plus size={16} />

@@ -4,10 +4,16 @@ import PageEditor from './components/PageEditor'
 import GraphView from './components/GraphView'
 import CommandPalette from './components/CommandPalette'
 import GlobalDialogHost from './components/common/GlobalDialogHost'
+import { useWorkspaceStore } from './store/workspace'
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [isGraphViewOpen, setIsGraphViewOpen] = useState(false)
+  const ready = useWorkspaceStore(state => state.isSynced)
+  const error = useWorkspaceStore(state => state.error)
+
+  if (error) return <div role="alert">Local storage is unavailable: {error}. Existing databases have been retained. Do not clear browser storage.</div>
+  if (!ready) return <div role="status">Opening local workspace…</div>
 
   return (
     <div className="app-container">

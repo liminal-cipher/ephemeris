@@ -1,49 +1,43 @@
 import { useState, useEffect } from 'react'
-import * as Y from 'yjs'
-import { WebrtcProvider } from 'y-webrtc'
-import { IndexeddbPersistence } from 'y-indexeddb'
+import { db } from '../../db/db'
+import { vault, workspaceReady } from '../../store/workspace'
+import { prepareNote } from '../../storage/noteIndex'
+import { connectDocument, useCollaboration } from '../../sync/collaboration'
 
 export function useEditorSync(activePageId) {
-  const [ydoc, setYdoc] = useState(null)
-  const [provider, setProvider] = useState(null)
-  const [isSynced, setIsSynced] = useState(false)
+  const [state, setState] = useState({ id: null })
+  const { enabled, generation } = useCollaboration()
 
   useEffect(() => {
-    setIsSynced(false)
-    if (!activePageId) {
-      setProvider(null)
-      setYdoc(null)
-      return
+    if (!activePageId) return
+    let cancelled = false
+    let unsubscribe
+    let document
+    async function open() {
+      try {
+        await workspaceReady
+        document = await prepareNote(vault, db, activePageId)
+        if (cancelled) return
+        const report = () => {
+          if (!cancelled) setState(previous => ({ ...previous, id: activePageId, ydoc: document.doc,
+            isSynced: true, status: document.status, error: document.error?.message, cacheError: document.cacheError }))
+        }
+        unsubscribe = document.subscribe(report)
+        report()
+        // Network setup is independent of loading and editing local content.
+        const provider = await connectDocument(activePageId, document)
+        if (!cancelled) setState(previous => ({ ...previous, provider }))
+      } catch (error) {
+        if (!cancelled) setState({ id: activePageId, error: error.message })
+      }
     }
-
-    const doc = new Y.Doc()
-    
-    // Offline persistence
-    const persistence = new IndexeddbPersistence(`ephemeris-page-${activePageId}`, doc)
-    
-    persistence.on('synced', () => {
-      setIsSynced(true)
-    })
-    
-    // P2P sync for the page rich text
-    const webrtcProvider = new WebrtcProvider(`ephemeris-room-${activePageId}`, doc, {
-      signaling: ['wss://signaling.yjs.dev', 'wss://y-webrtc-signaling-eu.herokuapp.com']
-    })
-
-    const colors = ['#958DF1', '#F98181', '#FBCE76', '#8B5CF6', '#3B82F6', '#10B981']
-    webrtcProvider.awareness.setLocalStateField('user', {
-      name: `User ${Math.floor(Math.random() * 1000)}`,
-      color: colors[Math.floor(Math.random() * colors.length)],
-    })
-
-    setYdoc(doc)
-    setProvider(webrtcProvider)
-
+    open()
     return () => {
-      webrtcProvider?.destroy()
-      doc.destroy()
+      cancelled = true
+      unsubscribe?.()
+      // The Vault owns the document for the session, including pending writes.
     }
-  }, [activePageId])
+  }, [activePageId, enabled, generation])
 
-  return { ydoc, provider, isSynced }
+  return state.id === activePageId ? state : { isSynced: false }
 }

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import Sidebar from './Sidebar';
 import { useStore } from '../store/useStore';
-import { workspacePages, useWorkspaceStore, createWorkspacePage } from '../store/workspace';
+import { workspacePages, useWorkspaceStore, workspaceDoc, workspaceReady } from '../store/workspace';
 
 // Mock export/import
 vi.mock('../utils/exportImport', () => ({
@@ -16,7 +16,10 @@ describe('Sidebar Component', () => {
   beforeEach(() => {
     localStorage.clear();
   });
-  beforeEach(() => {
+  beforeEach(async () => {
+    await workspaceReady;
+    workspaceDoc.getMap('pageFields').clear();
+    workspaceDoc.getMap('deletedPages').clear();
     // Clear Yjs map
     Array.from(workspacePages.keys()).forEach(key => workspacePages.delete(key));
     useWorkspaceStore.setState({ isSynced: true, pages: {} });
@@ -102,7 +105,7 @@ describe('Sidebar Component', () => {
     fireEvent.click(confirmBtn);
 
     await waitFor(() => {
-      expect(workspacePages.has('1')).toBe(false);
+      expect(workspaceDoc.getMap('deletedPages').has('1')).toBe(true);
     });
   });
 
@@ -127,7 +130,7 @@ describe('Sidebar Component', () => {
 
     // Should delete immediately without modal
     await waitFor(() => {
-      expect(workspacePages.has('1')).toBe(false);
+      expect(workspaceDoc.getMap('deletedPages').has('1')).toBe(true);
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
   });
@@ -206,7 +209,7 @@ describe('Sidebar Component', () => {
     });
 
     await waitFor(() => {
-      const moved = workspacePages.get('p2');
+      const moved = useWorkspaceStore.getState().pages.p2;
       expect(moved.parentId).toBe('p1');
     });
   });

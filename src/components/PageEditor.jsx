@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useStore } from '../store/useStore'
-import { usePagesList, deleteWorkspacePage } from '../store/workspace'
+import { usePagesList, deleteWorkspacePage, useWorkspaceStore } from '../store/workspace'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Collaboration from '@tiptap/extension-collaboration'
@@ -31,6 +31,7 @@ import { showConfirm, showToast } from '../store/dialogStore'
 export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   const { activePageId, setActivePageId } = useStore()
   const allPages = usePagesList()
+  const workspaceStatus = useWorkspaceStore(state => state.status)
 
   const [panelsPosition, setPanelsPosition] = useState(() => {
     try {
@@ -82,7 +83,9 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
     if (!page || !allPages) return []
     const trail = []
     let curr = page
-    while (curr) {
+    const seen = new Set()
+    while (curr && !seen.has(curr.id)) {
+      seen.add(curr.id)
       trail.unshift(curr)
       curr = curr.parentId ? allPages.find(p => p.id === curr.parentId) : null
     }
@@ -93,9 +96,8 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   const dexiePages = useLiveQuery(() => db.pages.toArray(), [])
 
   const titleInputRef = useRef(null)
-  const editorTimeoutRef = useRef(null)
 
-  const { ydoc, provider, isSynced } = useEditorSync(activePageId)
+  const { ydoc, provider, isSynced, status, error, cacheError } = useEditorSync(activePageId)
 
   useEffect(() => {
     if (page && (page.title === '' || !page.title) && titleInputRef.current) {
@@ -145,70 +147,6 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
     ] : baseExtensions,
   }, [ydoc, provider])
 
-  // Auto-save plain content to Dexie for backlinks and offline fallback
-  useEffect(() => {
-    if (ydoc && provider) {
-      const fragment = ydoc.getXmlFragment('default')
-      fragment.observeDeep(() => {
-        if (editorTimeoutRef.current) {
-          clearTimeout(editorTimeoutRef.current)
-        }
-        editorTimeoutRef.current = setTimeout(async () => {
-          if (editor && activePageId) {
-            const json = editor.getJSON()
-            const content = JSON.stringify(json)
-            const numUpdated = await db.pages.update(activePageId, {
-              content,
-              updatedAt: Date.now()
-            })
-            if (numUpdated === 0) {
-              await db.pages.add({ id: activePageId, content, updatedAt: Date.now() })
-            }
-          }
-        }, 500)
-      })
-
-      return () => {
-        if (editorTimeoutRef.current) {
-          clearTimeout(editorTimeoutRef.current)
-        }
-      }
-    }
-  }, [ydoc, provider, editor, activePageId])
-
-  const migratedPageIdsRef = useRef(new Set())
-
-  useEffect(() => {
-    if (page && editor && ydoc && isSynced) {
-      if (migratedPageIdsRef.current.has(activePageId)) {
-        return
-      }
-
-      const dexiePage = dexiePages?.find(p => p.id === activePageId || p.id === Number(activePageId))
-      if (dexiePage && dexiePage.content) {
-        const fragment = ydoc.getXmlFragment('default')
-        if (fragment.length === 0) {
-          try {
-            const parsed = JSON.parse(dexiePage.content)
-            const hasMeaningfulContent = parsed && Array.isArray(parsed.content) && parsed.content.some(block => {
-              if (block.type !== 'paragraph') return true
-              return Array.isArray(block.content) && block.content.length > 0
-            })
-
-            if (hasMeaningfulContent) {
-              editor.commands.setContent(parsed, false)
-            }
-            migratedPageIdsRef.current.add(activePageId)
-          } catch (e) {
-            console.error('Failed to parse legacy page content:', e)
-          }
-        } else {
-          migratedPageIdsRef.current.add(activePageId)
-        }
-      }
-    }
-  }, [page, editor, ydoc, isSynced, dexiePages, activePageId])
-
   const handleDeletePage = () => {
     const pageTitle = page?.title || 'Untitled'
     showConfirm({
@@ -217,8 +155,9 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
       confirmText: 'Delete',
       isDanger: true,
       showNeverAskKey: 'ephemeris_skip_delete_confirm',
-      onConfirm: () => {
-        deleteWorkspacePage(activePageId)
+      onConfirm: async () => {
+        try { await deleteWorkspacePage(activePageId) }
+        catch (failure) { showToast(`Delete failed: ${failure.message}`, 'error'); return }
         setActivePageId(null)
         showToast('Page deleted', 'info', 2000)
       }
@@ -236,12 +175,17 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
     }
   };
 
+  if (error) return <div role="alert">Local document could not be loaded or saved: {error}. Your source data has been retained. Export a backup before recovery.</div>
+  if (page && !isSynced) return <div role="status">Loading local document...</div>
+
   if (!page || !editor) {
     return <div className="empty-state">Select or create a page</div>
   }
 
   return (
     <div className="page-editor-wrapper">
+      <div role="status" aria-live="polite">{status === 'saved' && workspaceStatus === 'saved' ? 'Saved locally' : 'Saving locally...'}{cacheError ? ' - Search index unavailable' : ''}</div>
+      {page.hierarchyIssue && <div role="status">Parent link needs review. This page is shown at the workspace root; its original parent link is retained in backups.</div>}
       <div className="top-nav" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
           {!sidebarOpen && (
