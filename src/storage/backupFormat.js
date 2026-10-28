@@ -101,4 +101,3 @@ export async function parseBackup(text) {
     return { pages, deleted: workspace.getMap('deletedPages').toJSON(), documents, legacy: payload.legacy, settings, originalWorkspace: payload.workspace }
   } finally { workspace.destroy() }
 }
-
