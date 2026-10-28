@@ -1,13 +1,14 @@
 import { ReactRenderer } from '@tiptap/react';
 import tippy from 'tippy.js';
 import MentionList from './MentionList.jsx';
-import { db } from '../../db/db';
+import { vault, workspaceReady } from '../../store/workspace';
 
 export default {
   char: '[[',
   
   items: async ({ query }) => {
-    const pages = await db.pages.toArray();
+    await workspaceReady;
+    const pages = vault.list();
     return pages
       .filter(item => (item.title || 'Untitled').toLowerCase().includes(query.toLowerCase()))
       .slice(0, 5);

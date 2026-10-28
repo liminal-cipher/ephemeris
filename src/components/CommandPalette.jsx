@@ -46,7 +46,7 @@ export default function CommandPalette() {
   
   const setActivePageId = useStore((state) => state.setActivePageId);
   const pages = usePagesList();
-  const dexiePages = useLiveQuery(() => db.pages.toArray(), []) || [];
+  const dexiePages = useLiveQuery(() => db.searchProjection.toArray(), []) || [];
 
   // Filter pages by title, emoji, and content
   const filteredResults = useMemo(() => {

@@ -3,6 +3,7 @@ import { initializeLegacyContent, readContent, validateContent } from './noteCon
 // Rebuildable projection. One observer per open document is owned by the Vault
 // session, so navigating away cannot leave search stale or cancel an index write.
 export function prepareNote(vault, database, id) {
+  id = String(id)
   const document = vault.openDocument(id)
   if (!document.preparation) {
     document.preparation = (async () => {
@@ -12,7 +13,7 @@ export function prepareNote(vault, database, id) {
         try {
           const json = readContent(document.doc)
           if (json.content?.length) validateContent(json)
-          document.indexPending = database.pages.put({ id, content: JSON.stringify(json), updatedAt: Date.now() })
+          document.indexPending = database.searchProjection.put({ id, content: JSON.stringify(json), updatedAt: Date.now() })
           document.indexPending.catch(error => { document.cacheError = error.message })
         } catch (error) { document.cacheError = error.message }
       }

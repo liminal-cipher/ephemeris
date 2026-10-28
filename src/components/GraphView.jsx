@@ -9,7 +9,7 @@ import { X } from 'lucide-react'
 import './GraphView.css'
 
 export default function GraphView({ onClose }) {
-  const dexiePages = useLiveQuery(() => db.pages.toArray())
+  const dexiePages = useLiveQuery(() => db.searchProjection.toArray())
   const workspacePages = usePagesList()
   const { setActivePageId } = useStore()
   const fgRef = useRef()

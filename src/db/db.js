@@ -7,6 +7,9 @@ db.version(1).stores({
   pages: '++id, title, parentId, createdAt, updatedAt' // Only index fields we query by
 });
 
+// Additive only: legacy rows remain recovery data.
+db.version(2).stores({ searchProjection: 'id, updatedAt' });
+
 db.on('ready', () => migrateLegacy(db));
 
 // Seed initial page if empty

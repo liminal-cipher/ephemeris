@@ -93,7 +93,7 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
   }, [page, allPages])
 
   // Get content from Dexie for legacy fallback and backlinks
-  const dexiePages = useLiveQuery(() => db.pages.toArray(), [])
+  const dexiePages = useLiveQuery(() => db.searchProjection.toArray(), [])
 
   const titleInputRef = useRef(null)
 
