@@ -1,5 +1,5 @@
-import { LocalDocument } from './localDocument'
-import { createPage, updatePage, deletePage, restorePage, readPages } from './workspaceModel'
+import { LocalDocument } from './localDocument.js'
+import { createPage, updatePage, deletePage, restorePage, readPages } from './workspaceModel.js'
 
 // This is the browser storage boundary. It has no React or Tiptap dependency.
 // Rich text is accessed as a native Yjs document, not a second writable JSON copy.
