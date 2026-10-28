@@ -1,5 +1,61 @@
 # Ephemeris 2: implementation and verification handoff
 
+## Phase B native storage milestone — 29 October 2026
+
+Started from clean, freshly fetched `main` at `778f47d`. The user subsequently
+authorised semantic commits and a push to `main`. No PR, deployment or real-data
+migration was performed.
+
+Delivered:
+
+- Reproduced both legacy projection defects before correction: numeric/string
+  ID duplication and replacement of metadata. Added a separate Dexie projection
+  table and switched search/graph/backlinks to it. Schema-upgrade tests preserve
+  original rows, including pre-existing duplicates; suggestions use live metadata.
+- Added `native/vault.js`, `validation.js`, `importBackup.js` and `cli.js`: native
+  SQLite note operations, stable IDs, Yjs snapshots, metadata, immutable BLOB
+  attachments, optimistic versions/hashes, transactions and durable change records.
+- Extracted the shared backup format from the editor-dependent restore adapter.
+  Atomic isolated v2 import preserves native bytes, tombstones, links, legacy rows,
+  orphan recovery documents and the complete original backup. Identical repeated
+  imports are no-ops. Legacy-only content is explicit and protected from overwrite.
+- Added native tests and `npm run test:native` to GitHub Actions. Tests include
+  independent processes, rollback, an interrupted real importer, corruption and
+  the actual BrowserVault export path. No private user data was used.
+
+Results after a clean `npm ci`, on Windows with Node 24.20.0:
+
+| Command | Actual result |
+| --- | --- |
+| `npm ci` | Passed; 267 packages installed; lockfile unchanged |
+| `npm test` | 54 tests passed in 9 files |
+| `npm run test:native` | 19 tests passed; no failures or skips |
+| `npm run lint` | Exit 0; existing browser warnings remain; no native warnings |
+| `npm run build` | Passed; 66 offline assets; large-bundle warning remains |
+| `npm run test:e2e` | All 5 Chromium tests passed against the clean-install build |
+| `git diff --check` | Passed |
+| Dependency audit reported by `npm ci` | 31 moderate and 1 low findings remain |
+| Remote GitHub Actions / human acceptance | Not run |
+
+See [Native Vault](native-vault.md) for the API, runtime trade-off, reproducible
+commands, migration, rollback and ordered Phase C steps. The module requires
+Node 24.15+ and uses release-candidate `node:sqlite` without another dependency.
+Browser data remains untouched by native import. No transport/listener is added.
+
+This completes the tested native storage/import milestone, **not all of Phase B**.
+Remaining work includes browser/native integration, lossless legacy conversion,
+native export/recovery and full-text indexing. Native deletion affects one note,
+not a subtree; children remain stored/listed. Encryption, authentication, native
+revision history, Sync Engine and MCP are absent. Physical power loss, actual
+disk-full errors, non-Windows native execution and large-Vault performance remain
+unverified. Existing browser dependency risks remain. Finish the integration and
+recovery contracts before Phase C outbox/provider/conflict implementation.
+
+## Previous browser milestone (historical)
+
+The remaining sections describe the previous milestone. Native-storage status
+and current test counts above supersede their corresponding historical entries.
+
 27 October 2026. Baseline: `main` at `d04f14b`.
 Implementation is organised into focused commits; see Git history for revisions.
 No application deployment or release was performed as part of this work.

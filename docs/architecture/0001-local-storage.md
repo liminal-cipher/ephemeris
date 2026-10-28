@@ -1,6 +1,8 @@
 # ADR 0001: Preserve native documents behind a local storage boundary
 
-Status: accepted for browser stabilisation; native backend is a proposed next step.
+Status: accepted for browser stabilisation; native transactional storage and
+isolated backup import implemented as a Phase B milestone. See
+[Native Vault](../native-vault.md) for its API, verification and remaining limits.
 
 ## Decision
 
@@ -35,7 +37,9 @@ UI. It must own a single transactional SQLite Vault, expose a scoped local API,
 and enforce origin/token checks before browser access. Tauri offers a smaller
 desktop shell but adds a Rust boundary; Electron shares the runtime but adds a
 large distribution and patching surface. Neither shell solves storage safety.
-No companion, SQLite migration or filesystem access is enabled in this slice.
+The browser does not automatically start a companion or access the filesystem.
+The opt-in Node module now implements SQLite storage and isolated version 2
+backup import. No network listener or browser transport is enabled.
 
 ## Consequences
 
