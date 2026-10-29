@@ -1,55 +1,72 @@
 # Ephemeris 2: implementation and verification handoff
 
-## Phase B native storage milestone — 29 October 2026
+## Phase B integration milestone — 29 October 2026
 
-Started from clean, freshly fetched `main` at `778f47d`. The user subsequently
-authorised semantic commits and a push to `main`. No PR, deployment or real-data
-migration was performed.
+Current work starts from clean, freshly fetched `main` at `e061cfd`. The user
+authorised focused commits and a push on 29 October 2026. Deployment and real-user
+migration remain outside this milestone.
+The sections below this milestone are historical; this section and
+[Native Vault](native-vault.md) describe the current implementation and limits.
 
 Delivered:
 
-- Reproduced both legacy projection defects before correction: numeric/string
-  ID duplication and replacement of metadata. Added a separate Dexie projection
-  table and switched search/graph/backlinks to it. Schema-upgrade tests preserve
-  original rows, including pre-existing duplicates; suggestions use live metadata.
-- Added `native/vault.js`, `validation.js`, `importBackup.js` and `cli.js`: native
-  SQLite note operations, stable IDs, Yjs snapshots, metadata, immutable BLOB
-  attachments, optimistic versions/hashes, transactions and durable change records.
-- Extracted the shared backup format from the editor-dependent restore adapter.
-  Atomic isolated v2 import preserves native bytes, tombstones, links, legacy rows,
-  orphan recovery documents and the complete original backup. Identical repeated
-  imports are no-ops. Legacy-only content is explicit and protected from overwrite.
-- Added native tests and `npm run test:native` to GitHub Actions. Tests include
-  independent processes, rollback, an interrupted real importer, corruption and
-  the actual BrowserVault export path. No private user data was used.
+- `native/backup.js`, `integrity.js` and `paths.js`: supported SQLite online
+  snapshots, versioned native manifests, full verification and isolated restore.
+  Committed WAL data, IDs, exact Yjs bytes, attachments, tombstones, legacy rows
+  and recovery archives are retained. Incomplete exports/restores fail closed.
+- `native/textProjection.js` and Vault API additions: transactional FTS5 trigram
+  search, short-query fallback, stable bounded pagination, rebuilding and coverage
+  reporting. English, Korean and mixed-language cases are exercised.
+- `native/legacyCodec.js`: explicit version-checked plain paragraph/text conversion
+  with round-trip evidence and retention of the original JSON and native update.
+  Unknown rich-text remains unsupported, recoverable and protected from replacement.
+- `native/companion.js`, `companion-worker.js` and `serve.js`: explicitly launched
+  IPv4 loopback read-only access to one Vault, exact Host/Origin validation,
+  ephemeral bearer sessions and storage work isolated in a Worker. Session files
+  must be outside the repository. No token is logged or bundled.
+- `NativeWorkspace.jsx`/CSS, `nativeConnection.js` and `App.jsx`: opt-in read-only
+  browser listing/search/preview, metadata, attachment and recovery downloads,
+  recent changes and disconnect. BrowserVault and the existing editor stay separate.
+- Added backup/search/legacy/companion unit/integration tests and real Chromium
+  native-connection tests. CI now has Ubuntu/Windows jobs with unique artifacts.
 
-Results after a clean `npm ci`, on Windows with Node 24.20.0:
+Observed on Windows, Node 24.20.0, with synthetic data only:
 
 | Command | Actual result |
 | --- | --- |
-| `npm ci` | Passed; 267 packages installed; lockfile unchanged |
-| `npm test` | 54 tests passed in 9 files |
-| `npm run test:native` | 19 tests passed; no failures or skips |
-| `npm run lint` | Exit 0; existing browser warnings remain; no native warnings |
-| `npm run build` | Passed; 66 offline assets; large-bundle warning remains |
-| `npm run test:e2e` | All 5 Chromium tests passed against the clean-install build |
+| `npm test` | 56 tests passed in 10 files |
+| `npm run test:native` | 37 tests passed; no failures or skips |
+| `npm run test:e2e` | 7 Chromium tests passed, including both new companion cases |
+| `npm run lint` | Exit 0; existing browser warnings only |
+| `npm run build` | Passed; 66 offline assets; existing large-chunk warning |
+| `npm audit --json` | Exit 1: 31 moderate, 1 low, no high/critical findings |
 | `git diff --check` | Passed |
-| Dependency audit reported by `npm ci` | 31 moderate and 1 low findings remain |
-| Remote GitHub Actions / human acceptance | Not run |
+| Linux/macOS / remote CI / human acceptance | Not executed |
 
-See [Native Vault](native-vault.md) for the API, runtime trade-off, reproducible
-commands, migration, rollback and ordered Phase C steps. The module requires
-Node 24.15+ and uses release-candidate `node:sqlite` without another dependency.
-Browser data remains untouched by native import. No transport/listener is added.
+Snapshot tests include another writer, committed WAL, checksum/format rejection,
+attachment tampering, cancellation and process exit immediately before publication.
+Search failures roll back note/journal writes; rebuilding preserves canonical data.
+Companion tests reject missing/invalid credentials, foreign/null origins, bad hosts,
+writes, arbitrary path/SQL parameters and stale credentials after restart. Chromium
+checks explicit connection, Korean search, attachment download, no persisted token,
+unchanged Vault data and browser editing when the companion is unavailable.
 
-This completes the tested native storage/import milestone, **not all of Phase B**.
-Remaining work includes browser/native integration, lossless legacy conversion,
-native export/recovery and full-text indexing. Native deletion affects one note,
-not a subtree; children remain stored/listed. Encryption, authentication, native
-revision history, Sync Engine and MCP are absent. Physical power loss, actual
-disk-full errors, non-Windows native execution and large-Vault performance remain
-unverified. Existing browser dependency risks remain. Finish the integration and
-recovery contracts before Phase C outbox/provider/conflict implementation.
+The first backup run exposed Windows rejecting fsync on a read-only file handle;
+the implementation now uses a writable handle only for its newly created files,
+and all backup tests pass. POSIX directory fsync is implemented but untested here.
+No functioning WSL/Linux distribution or Docker runtime was available. The updated
+CI matrix has not yet been observed running remotely.
+
+Overall Phase B remains open for platform/recovery acceptance, actual disk-full
+and power-loss tests, large-Vault performance and broader rich-text coverage.
+Native browser writes and native-to-browser backup conversion are not implemented;
+native snapshots must not be presented as browser-importable backups. No E2EE,
+production Sync Engine or MCP was added. See the current native guide for CLI
+commands, rollback, session security boundaries and remaining memory limits.
+
+Phase C entry point: specify provider-neutral records/conflict semantics, then add
+a transactional persistent outbox and immutable conflict history. Validate two
+independent Vaults against a deterministic provider before any production transport.
 
 ## Previous browser milestone (historical)
 

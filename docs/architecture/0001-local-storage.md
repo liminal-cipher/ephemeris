@@ -1,7 +1,7 @@
 # ADR 0001: Preserve native documents behind a local storage boundary
 
-Status: accepted for browser stabilisation; native transactional storage and
-isolated backup import implemented as a Phase B milestone. See
+Status: accepted for browser stabilisation; native transactions, isolated import,
+native snapshots, search and read-only companion integration implemented. See
 [Native Vault](../native-vault.md) for its API, verification and remaining limits.
 
 ## Decision
@@ -38,8 +38,20 @@ and enforce origin/token checks before browser access. Tauri offers a smaller
 desktop shell but adds a Rust boundary; Electron shares the runtime but adds a
 large distribution and patching surface. Neither shell solves storage safety.
 The browser does not automatically start a companion or access the filesystem.
-The opt-in Node module now implements SQLite storage and isolated version 2
-backup import. No network listener or browser transport is enabled.
+The opt-in Node module implements SQLite storage, isolated browser v2 import and
+native-to-native snapshots using SQLite's supported backup API. Native backup
+format v1 is distinct from browser backup v2 and preserves stable IDs.
+
+FTS5 trigram indexes supported native text and metadata transactionally. Short
+queries use a substring scan, and extraction reports incomplete coverage. The
+index is disposable; it never replaces canonical Yjs or recovery data.
+
+An explicitly launched companion binds only IPv4 loopback and requires exact
+Origin, Host and an ephemeral session token. It scopes a read-only NativeVault
+handle to one selected directory and runs storage in a Worker. Browser access
+requires loading a private session file and clicking Connect; the editor remains
+on BrowserVault. Desktop IPC is deferred until there is a desktop shell. No
+mutating HTTP API, public endpoint, cloud service or automatic migration is added.
 
 ## Consequences
 
