@@ -1,27 +1,15 @@
 import { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, lstatSync, realpathSync } from 'node:fs'
+import { lstatSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { identifier, metadata, jsonValue, nativeUpdate, emptyUpdate, digest, MAX_BYTES } from './validation.js'
+import { directoryPath } from './paths.js'
+import { APPLICATION_ID, verifyDatabase } from './integrity.js'
+import { exportSnapshot } from './backup.js'
+import { projectText, searchProjection, pageOptions } from './textProjection.js'
+import { convertPlainLegacy } from './legacyCodec.js'
 
-const APPLICATION_ID = 1162889293
 const ACCESS = Symbol('Vault construction')
-
-// The caller selects a trusted local directory. IDs never become file paths.
-function directoryPath(directory, create) {
-  if (typeof directory !== 'string' || !path.isAbsolute(directory) || [...directory].some(char => char.charCodeAt(0) < 32) || directory.split(/[\\/]/).includes('..')) throw new Error('Expected an absolute Vault directory without traversal')
-  const resolved = path.resolve(directory)
-  if (resolved === path.parse(resolved).root || (process.platform === 'win32' && (resolved.startsWith('\\\\') || resolved.slice(2).includes(':')))) throw new Error('Invalid Vault directory')
-  let current = path.parse(resolved).root
-  for (const part of resolved.slice(current.length).split(path.sep).filter(Boolean)) {
-    current = path.join(current, part)
-    if (create && current === resolved) break
-    const stat = lstatSync(current)
-    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('Vault paths must be real local directories')
-  }
-  if (create) mkdirSync(resolved, { mode: 0o700 }) // Exclusive; never reuse a destination.
-  return realpathSync(resolved)
-}
 
 export class ConflictError extends Error {
   constructor() { super('Stale note version or content hash'); this.name = 'ConflictError' }
@@ -30,15 +18,18 @@ export class ConflictError extends Error {
 export class NativeVault {
   #db
   #closed = false
+  #backups = 0
+  #readOnly = false
 
   static create(directory) { return new NativeVault(ACCESS, directory, true) }
-  static open(directory) { return new NativeVault(ACCESS, directory, false) }
+  static open(directory, { readOnly = false } = {}) { return new NativeVault(ACCESS, directory, false, readOnly) }
 
-  constructor(access, directory, create) {
+  constructor(access, directory, create, readOnly = false) {
     if (access !== ACCESS) throw new Error('Use NativeVault.create or NativeVault.open')
     const [major, minor] = process.versions.node.split('.').map(Number)
     if (major < 24 || (major === 24 && minor < 15)) throw new Error('Native Vault requires Node >=24.15')
     const root = directoryPath(directory, create)
+    if (existsSync(path.join(root, '.restoring'))) throw new Error('Incomplete restore; Vault is not published')
     this.directory = root
     const file = path.join(root, 'vault.sqlite')
     if (!create) {
@@ -52,7 +43,8 @@ export class NativeVault {
       } catch (error) { if (error.code !== 'ENOENT') throw error }
     }
     try {
-      this.#db = new DatabaseSync(file, { timeout: 5000, enableForeignKeyConstraints: true, allowExtension: false })
+      this.#readOnly = readOnly
+      this.#db = new DatabaseSync(file, { readOnly, timeout: 5000, enableForeignKeyConstraints: true, allowExtension: false })
       if (create) {
         this.#db.exec(`
           PRAGMA journal_mode = WAL;
@@ -85,13 +77,15 @@ export class NativeVault {
         if (this.#db.prepare('PRAGMA quick_check').get().quick_check !== 'ok' || this.#db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Corrupt Vault')
         // Fail closed on incomplete schemas before accepting writes.
         for (const table of ['notes', 'attachments', 'changes', 'imports']) this.#db.prepare(`SELECT * FROM ${table} LIMIT 0`).all()
-        this.#db.exec('PRAGMA synchronous = FULL')
+        if (!readOnly) this.#db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL')
       }
+      if (!readOnly && !this.#db.prepare("SELECT name FROM sqlite_schema WHERE name='search_fts'").get()) this.rebuildSearch()
     } catch (error) { this.#db?.close(); throw error }
   }
 
   #transaction(operation) {
     if (this.#closed) throw new Error('Vault is closed')
+    if (this.#readOnly) throw new Error('Vault is read-only')
     this.#db.exec('BEGIN IMMEDIATE')
     try {
       const result = operation()
@@ -141,6 +135,61 @@ export class NativeVault {
   #journal(id, version, kind, hash) {
     this.#db.prepare('INSERT INTO changes(note_id,version,kind,content_hash,recorded_at) VALUES(?,?,?,?,?)')
       .run(id, version, kind, hash, new Date().toISOString())
+    this.#index(id)
+  }
+
+  #index(id) {
+    const note = this.read(id), projection = searchProjection(note)
+    this.#db.prepare('DELETE FROM search_fts WHERE note_id=?').run(id)
+    this.#db.prepare('INSERT INTO search_fts(note_id,text,coverage,reasons,version) VALUES(?,?,?,?,?)')
+      .run(id, projection.indexedText, projection.coverage, JSON.stringify(projection.reasons), note.version)
+  }
+
+  rebuildSearch() {
+    return this.#transaction(() => {
+      this.#db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(note_id UNINDEXED,text,coverage UNINDEXED,reasons UNINDEXED,version UNINDEXED,tokenize='trigram')")
+      this.#db.exec('DELETE FROM search_fts')
+      for (const { id } of this.#db.prepare('SELECT id FROM notes ORDER BY id').all()) this.#index(id)
+      return this.#db.prepare('SELECT count(*) AS count FROM search_fts').get().count
+    })
+  }
+
+  verifySearch() {
+    return this.#transaction(() => {
+      this.#db.exec("INSERT INTO search_fts(search_fts) VALUES('integrity-check')")
+      const rows = this.#db.prepare('SELECT * FROM search_fts ORDER BY note_id').all()
+      const notes = this.list({ includeDeleted: true, includeRecovery: true })
+      if (rows.length !== notes.length) throw new Error('Search index mismatch; rebuild required')
+      for (let i = 0; i < notes.length; i++) {
+        const note = notes[i], row = rows[i], expected = searchProjection(note)
+        if (row.note_id !== note.id || Number(row.version) !== note.version || row.text !== expected.indexedText || row.coverage !== expected.coverage || row.reasons !== JSON.stringify(expected.reasons)) throw new Error('Search index mismatch; rebuild required')
+      }
+      return { count: rows.length }
+    })
+  }
+
+  preview(id) {
+    const note = this.read(id)
+    return projectText(note.document, note.contentState)
+  }
+
+  listPage(options = {}) {
+    const { limit, offset } = pageOptions(options)
+    return this.#db.prepare('SELECT id,metadata,version,content_state FROM notes WHERE deleted IS NULL AND recovery=0 ORDER BY id LIMIT ? OFFSET ?')
+      .all(limit, offset).map(row => ({ id: row.id, metadata: JSON.parse(row.metadata), version: row.version, contentState: row.content_state }))
+  }
+
+  search(query, options = {}) {
+    const { limit, offset } = pageOptions(options)
+    if (typeof query !== 'string' || !query.trim() || [...query].length > 200 || query.includes('\0')) throw new Error('Invalid search query')
+    const value = query.trim().normalize('NFC').toLowerCase()
+    if (this.#db.prepare('SELECT n.id FROM notes n LEFT JOIN search_fts s ON s.note_id=n.id WHERE s.note_id IS NULL OR s.version != n.version LIMIT 1').get()) throw new Error('Search index is stale; rebuild required')
+    const short = [...value].length < 3
+    const clause = short ? 'instr(s.text, ?) > 0' : 'search_fts MATCH ?'
+    const rows = this.#db.prepare(`SELECT n.id,n.metadata,n.version,s.coverage,s.reasons FROM search_fts s JOIN notes n ON n.id=s.note_id WHERE ${clause} AND n.deleted IS NULL AND n.recovery=0 ORDER BY n.id LIMIT ? OFFSET ?`)
+      .all(short ? value : '"' + value.replaceAll('"', '""') + '"', limit, offset)
+    return rows.map(row => ({ id: row.id, metadata: JSON.parse(row.metadata), version: row.version,
+      coverage: row.coverage, reasons: JSON.parse(row.reasons) }))
   }
 
   #insert({ id, metadata: fields, document, deleted = null, recovery = false, legacyRecords = [], contentState = 'native' }, kind) {
@@ -173,8 +222,8 @@ export class NativeVault {
       const next = this.#view(row)
       mutate(next)
       const encoded = metadata(next.metadata), bytes = nativeUpdate(next.document), hash = digest(bytes)
-      this.#db.prepare('UPDATE notes SET metadata=?,document=?,content_hash=?,version=version+1,deleted=? WHERE id=?')
-        .run(encoded, bytes, hash, next.deleted === null ? null : jsonValue(next.deleted), id)
+      this.#db.prepare('UPDATE notes SET metadata=?,document=?,content_hash=?,version=version+1,deleted=?,content_state=? WHERE id=?')
+        .run(encoded, bytes, hash, next.deleted === null ? null : jsonValue(next.deleted), next.contentState, id)
       this.#journal(id, row.version + 1, kind, hash)
       return this.read(id)
     })
@@ -197,6 +246,13 @@ export class NativeVault {
   }
 
   rename(id, title, expected) { return this.update(id, { metadata: { title } }, expected) }
+  convertLegacy(id, expected) {
+    return this.#change(id, expected, 'legacy-convert', next => {
+      if (next.contentState !== 'legacy-only' || next.deleted !== null || next.recovery) throw new Error('Expected a live legacy-only note')
+      next.document = convertPlainLegacy(next)
+      next.contentState = 'native'
+    })
+  }
   move(id, parentId, expected) { return this.update(id, { metadata: { parentId } }, expected) }
   delete(id, expected) {
     return this.#change(id, expected, 'delete', next => {
@@ -242,6 +298,11 @@ export class NativeVault {
     return this.#db.prepare('SELECT * FROM changes WHERE sequence > ? ORDER BY sequence LIMIT ?').all(after, limit).map(row => ({ ...row }))
   }
 
+  recentChanges({ limit = 50 } = {}) {
+    pageOptions({ limit })
+    return this.#db.prepare('SELECT * FROM changes ORDER BY sequence DESC LIMIT ?').all(limit).map(row => ({ ...row }))
+  }
+
   // An import is only allowed into an empty Vault. The validator is always run
   // here so future transports cannot bypass it with a fabricated parsed object.
   async importBackup(text) {
@@ -263,7 +324,21 @@ export class NativeVault {
     return row.original
   }
 
+  verify() {
+    this.#db.exec('BEGIN')
+    try { const result = verifyDatabase(this.#db); this.#db.exec('COMMIT'); return result }
+    catch (error) { if (this.#db.isTransaction) this.#db.exec('ROLLBACK'); throw error }
+  }
+
+  async exportBackup(destination, options) {
+    if (this.#closed) throw new Error('Vault is closed')
+    this.#backups++
+    try { return await exportSnapshot(this.#db, destination, options) }
+    finally { this.#backups-- }
+  }
+
   close() {
+    if (this.#backups) throw new Error('Wait for the active backup before closing')
     if (!this.#closed) { this.#db.close(); this.#closed = true }
   }
 }
