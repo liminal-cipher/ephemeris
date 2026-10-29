@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { identifier, jsonValue, metadata, nativeUpdate, digest } from './validation.js'
 import { searchProjection } from './textProjection.js'
+import { verifySync } from './sync/store.js'
 
 export const APPLICATION_ID = 1162889293
 
@@ -8,12 +9,16 @@ export const APPLICATION_ID = 1162889293
 // The caller holds a read transaction or owns an unpublished immutable snapshot.
 export function verifyDatabase(db) {
   if (db.prepare('PRAGMA application_id').get().application_id !== APPLICATION_ID ||
-      db.prepare('PRAGMA user_version').get().user_version !== 1) throw new Error('Unsupported Vault schema')
-  if (db.prepare('PRAGMA integrity_check').all().some(row => row.integrity_check !== 'ok') ||
-      db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Corrupt Vault database')
+      ![1,2].includes(db.prepare('PRAGMA user_version').get().user_version)) throw new Error('Unsupported Vault schema')
+  const hasSearch = Boolean(db.prepare("SELECT name FROM sqlite_schema WHERE name='search_fts'").get())
+  // Open the virtual-table cursor in this transaction before SQLite's FTS5
+  // integrity callback, refreshing caches after another connection's commits.
+  if (hasSearch) db.prepare('SELECT count(*) FROM search_fts').get()
+  const integrity = db.prepare('PRAGMA integrity_check').all()
+  const foreignKeys = db.prepare('PRAGMA foreign_key_check').all()
+  if (integrity.some(row => row.integrity_check !== 'ok') || foreignKeys.length) throw new Error('Corrupt Vault database')
   if (db.prepare("SELECT name FROM sqlite_schema WHERE type IN ('trigger','view')").all().length) throw new Error('Unsupported executable schema')
   const hash = createHash('sha256')
-  const hasSearch = Boolean(db.prepare("SELECT name FROM sqlite_schema WHERE name='search_fts'").get())
   const add = row => hash.update(JSON.stringify(row, (_, value) => value instanceof Uint8Array ? Buffer.from(value).toString('base64') : value)).update('\n')
   let notes = 0, attachments = 0
   for (const row of db.prepare('SELECT * FROM notes ORDER BY id').iterate()) {
@@ -53,5 +58,6 @@ export function verifyDatabase(db) {
     add(row)
   }
   if (hasSearch && db.prepare('SELECT count(*) AS count FROM search_fts').get().count !== notes) throw new Error('Search projection integrity failure; rebuild required')
+  if (db.prepare('PRAGMA user_version').get().user_version === 2) verifySync(db,add)
   return { notes, attachments, contentHash: hash.digest('hex') }
 }

@@ -42,15 +42,16 @@ export async function exportSnapshot(db, destination, { signal } = {}) {
   await backup(db, partial, { rate: 32 })
   signal?.throwIfAborted()
   const snapshot = new DatabaseSync(partial, { allowExtension: false })
-  let verified
+  let verified, schemaVersion
   try {
     // Seal a self-contained image; a portable backup never relies on sidecars.
     snapshot.exec('PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA trusted_schema=OFF')
     verified = verifyDatabase(snapshot)
+    schemaVersion = snapshot.prepare('PRAGMA user_version').get().user_version
   } finally { snapshot.close() }
   syncFile(partial)
   const sha256 = await fileHash(partial)
-  const manifest = { format: FORMAT, version: 1, schemaVersion: 1, file: 'snapshot.sqlite', sha256, ...verified }
+  const manifest = { format: FORMAT, version: 1, schemaVersion, file: 'snapshot.sqlite', sha256, ...verified }
   renameSync(partial, path.join(root, 'snapshot.sqlite'))
   signal?.throwIfAborted()
   const pending = path.join(root, 'manifest.partial')
@@ -66,7 +67,7 @@ async function validatedSnapshot(directory) {
   const manifestFile = path.join(root, 'manifest.json')
   if (regularFile(manifestFile).size > 4096) throw new Error('Invalid backup manifest')
   const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'))
-  if (manifest.format !== FORMAT || manifest.version !== 1 || manifest.schemaVersion !== 1 || manifest.file !== 'snapshot.sqlite' || !/^[a-f0-9]{64}$/.test(manifest.sha256)) throw new Error('Incompatible native backup')
+  if (manifest.format !== FORMAT || manifest.version !== 1 || ![1,2].includes(manifest.schemaVersion) || manifest.file !== 'snapshot.sqlite' || !/^[a-f0-9]{64}$/.test(manifest.sha256)) throw new Error('Incompatible native backup')
   const file = path.join(root, 'snapshot.sqlite')
   for (const suffix of ['-wal', '-shm', '-journal']) if (existsSync(file + suffix)) throw new Error('Portable backup must not have SQLite sidecars')
   regularFile(file)
@@ -74,6 +75,7 @@ async function validatedSnapshot(directory) {
   const db = openSnapshot(file)
   try {
     const verified = verifyDatabase(db)
+    if (db.prepare('PRAGMA user_version').get().user_version !== manifest.schemaVersion) throw new Error('Backup schema mismatch')
     if (verified.contentHash !== manifest.contentHash || verified.notes !== manifest.notes || verified.attachments !== manifest.attachments) throw new Error('Backup content mismatch')
     return { db, manifest }
   } catch (error) { db.close(); throw error }

@@ -8,6 +8,8 @@ import { APPLICATION_ID, verifyDatabase } from './integrity.js'
 import { exportSnapshot } from './backup.js'
 import { projectText, searchProjection, pageOptions } from './textProjection.js'
 import { convertPlainLegacy } from './legacyCodec.js'
+import { SyncStore, migrateSync } from './sync/store.js'
+import { snapshot, decode, equal } from './sync/protocol.js'
 
 const ACCESS = Symbol('Vault construction')
 
@@ -20,6 +22,7 @@ export class NativeVault {
   #closed = false
   #backups = 0
   #readOnly = false
+  #applyingSync = false
 
   static create(directory) { return new NativeVault(ACCESS, directory, true) }
   static open(directory, { readOnly = false } = {}) { return new NativeVault(ACCESS, directory, false, readOnly) }
@@ -73,7 +76,7 @@ export class NativeVault {
         `)
       } else {
         if (this.#db.prepare('PRAGMA application_id').get().application_id !== APPLICATION_ID ||
-            this.#db.prepare('PRAGMA user_version').get().user_version !== 1) throw new Error('Unsupported Vault schema')
+            ![1,2].includes(this.#db.prepare('PRAGMA user_version').get().user_version)) throw new Error('Unsupported Vault schema')
         if (this.#db.prepare('PRAGMA quick_check').get().quick_check !== 'ok' || this.#db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Corrupt Vault')
         // Fail closed on incomplete schemas before accepting writes.
         for (const table of ['notes', 'attachments', 'changes', 'imports']) this.#db.prepare(`SELECT * FROM ${table} LIMIT 0`).all()
@@ -133,9 +136,10 @@ export class NativeVault {
   }
 
   #journal(id, version, kind, hash) {
-    this.#db.prepare('INSERT INTO changes(note_id,version,kind,content_hash,recorded_at) VALUES(?,?,?,?,?)')
+    const result = this.#db.prepare('INSERT INTO changes(note_id,version,kind,content_hash,recorded_at) VALUES(?,?,?,?,?)')
       .run(id, version, kind, hash, new Date().toISOString())
     this.#index(id)
+    if (!this.#applyingSync && this.#db.prepare('PRAGMA user_version').get().user_version === 2) this.#sync().record(id, Number(result.lastInsertRowid))
   }
 
   #index(id) {
@@ -323,6 +327,55 @@ export class NativeVault {
     if (!row) throw new Error('Import archive not found')
     return row.original
   }
+
+  #syncSnapshot(id) { return snapshot(this.read(id), this.listAttachments(id).map(a => this.readAttachment(id,a.id))) }
+
+  #sync() {
+    if (this.#db.prepare('PRAGMA user_version').get().user_version !== 2) throw new Error('Synchronisation is not enabled')
+    return new SyncStore(this.#db, id => this.#syncSnapshot(id), value => this.#applySync(value))
+  }
+
+  #applySync(value) {
+    const exists = this.#db.prepare('SELECT id FROM notes WHERE id=?').get(value.id)
+    if (exists && equal(this.#syncSnapshot(value.id),value)) return
+    // Cross-note hierarchy violations stop the page transaction. They never
+    // bypass the same hierarchy checks used by local moves.
+    if (value.deleted === null && !value.recovery) this.#parent(value.id,value.metadata.parentId)
+    this.#applyingSync = true
+    try {
+      const bytes=decode(value.document), hash=digest(bytes)
+      if (!exists) this.#insert({ ...value, document:bytes }, 'sync')
+      else this.#db.prepare('UPDATE notes SET metadata=?,document=?,content_hash=?,version=version+1,deleted=?,recovery=?,legacy=?,content_state=? WHERE id=?')
+        .run(metadata(value.metadata),bytes,hash,value.deleted===null?null:jsonValue(value.deleted),Number(value.recovery),jsonValue(value.legacyRecords),value.contentState,value.id)
+      for (const a of value.attachments) this.#db.prepare('INSERT INTO attachments VALUES(?,?,?,?,?) ON CONFLICT(note_id,id) DO UPDATE SET metadata=excluded.metadata,bytes=excluded.bytes,sha256=excluded.sha256')
+        .run(value.id,a.id,jsonValue(a.metadata),decode(a.bytes),a.sha256)
+      if (exists) this.#journal(value.id,this.read(value.id).version,'sync',hash)
+    } finally { this.#applyingSync = false }
+  }
+
+  enableSync() {
+    return this.#transaction(() => {
+      if (this.#db.prepare('PRAGMA user_version').get().user_version === 1) {
+        migrateSync(this.#db)
+        for (const {id} of this.#db.prepare('SELECT id FROM notes ORDER BY id').all()) {
+          const {sequence}=this.#db.prepare('SELECT max(sequence) AS sequence FROM changes WHERE note_id=?').get(id)
+          this.#sync().record(id,sequence)
+        }
+      }
+      return this.#sync().identity()
+    })
+  }
+
+  syncIdentity() { return this.#sync().identity() }
+  forkSyncClient() { return this.#transaction(() => this.#sync().forkClient()) }
+  connectSync(target,epoch) { return this.#transaction(() => this.#sync().connect(target,epoch)) }
+  pendingSync(target,{now=Date.now(),limit=100}={}) { return this.#sync().pending(target,now,limit) }
+  acknowledgeSync(target,id,sha256) { return this.#transaction(() => this.#sync().acknowledge(target,id,sha256)) }
+  retrySync(target,id,now=Date.now()) { return this.#transaction(() => this.#sync().retry(target,id,now)) }
+  receiveSync(target,cursor,page) { return this.#transaction(() => this.#sync().receive(target,cursor,page)) }
+  syncStatus(target) { return this.#sync().status(target) }
+  syncConflicts(noteId) { return this.#sync().conflicts(noteId) }
+  retainedSyncOperation(id) { return this.#sync().retained(id) }
 
   verify() {
     this.#db.exec('BEGIN')
