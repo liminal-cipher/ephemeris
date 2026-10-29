@@ -1,72 +1,87 @@
 # Ephemeris 2: implementation and verification handoff
 
-## Phase B integration milestone — 29 October 2026
+## Phase C-1 simulated synchronisation ? 29 October 2026
 
-Current work starts from clean, freshly fetched `main` at `e061cfd`. The user
-authorised focused commits and a push on 29 October 2026. Deployment and real-user
-migration remain outside this milestone.
-The sections below this milestone are historical; this section and
-[Native Vault](native-vault.md) describe the current implementation and limits.
+Baseline: clean fetched `main` at `48079ae`, following the published Phase B
+integration milestone. The user authorised focused commits and a push on
+29 October 2026. Deployment and real-user migration remain outside this scope.
 
-Delivered:
+Implemented:
 
-- `native/backup.js`, `integrity.js` and `paths.js`: supported SQLite online
-  snapshots, versioned native manifests, full verification and isolated restore.
-  Committed WAL data, IDs, exact Yjs bytes, attachments, tombstones, legacy rows
-  and recovery archives are retained. Incomplete exports/restores fail closed.
-- `native/textProjection.js` and Vault API additions: transactional FTS5 trigram
-  search, short-query fallback, stable bounded pagination, rebuilding and coverage
-  reporting. English, Korean and mixed-language cases are exercised.
-- `native/legacyCodec.js`: explicit version-checked plain paragraph/text conversion
-  with round-trip evidence and retention of the original JSON and native update.
-  Unknown rich-text remains unsupported, recoverable and protected from replacement.
-- `native/companion.js`, `companion-worker.js` and `serve.js`: explicitly launched
-  IPv4 loopback read-only access to one Vault, exact Host/Origin validation,
-  ephemeral bearer sessions and storage work isolated in a Worker. Session files
-  must be outside the repository. No token is logged or bundled.
-- `NativeWorkspace.jsx`/CSS, `nativeConnection.js` and `App.jsx`: opt-in read-only
-  browser listing/search/preview, metadata, attachment and recovery downloads,
-  recent changes and disconnect. BrowserVault and the existing editor stay separate.
-- Added backup/search/legacy/companion unit/integration tests and real Chromium
-  native-connection tests. CI now has Ubuntu/Windows jobs with unique artifacts.
+- `native/sync/protocol.js`: versioned full-snapshot operations, causal parents,
+  field registers, compatible Yjs merging, deletion precedence and deterministic
+  unresolved conflicts with both original versions retained.
+- `native/sync/store.js` and `native/vault.js`: explicit additive schema 1 to 2
+  migration, stable identities, transactional outbox, per-target deliveries,
+  durable retry state, incoming dependency staging and atomic cursor application.
+  The existing journal and search index remain in each mutation transaction.
+- `native/sync/engine.js`: bounded asynchronous orchestration, acceptance checks,
+  timeouts, cancellation, resumable cursors and no remote echo IDs. Explicit call
+  only; no network listeners, credentials, production transport or background sync.
+- `native/sync/simulatedProvider.js`: deterministic provider with immutable IDs,
+  epoch/cursor checks, exported test state, fault injection and page transforms.
+- Native backup/verification now preserve schema 2 operations, delivery state,
+  conflicts and checkpoints, while retaining schema 1 support. A restored copy
+  must fork its client identity before being edited alongside the original.
+- `native/test/sync.test.js` and `sync-worker.js`: 30 new tests with independent
+  directories, reopen assertions, child-process exits and transaction failures.
+  The existing Ubuntu/Windows native-test step discovers them automatically.
 
-Observed on Windows, Node 24.20.0, with synthetic data only:
+[ADR 0002](architecture/0002-native-sync.md) is authoritative for protocol,
+reference-study findings, retained versions, recovery and current limits.
+[Native Vault](native-vault.md) contains API examples and backup/rollback commands.
+No AGPL implementation was copied; no new dependency was added.
+
+Observed on Windows / Node 24.20.0, synthetic data only:
 
 | Command | Actual result |
 | --- | --- |
-| `npm test` | 56 tests passed in 10 files |
-| `npm run test:native` | 37 tests passed; no failures or skips |
-| `npm run test:e2e` | 7 Chromium tests passed, including both new companion cases |
+| `npm ci` | Passed; reported 31 moderate and 1 low dependency advisories |
 | `npm run lint` | Exit 0; existing browser warnings only |
+| `npm test` | 56 passed in 10 files |
+| `npm run test:native` | 67 passed, including 30 sync tests; no failures/skips |
 | `npm run build` | Passed; 66 offline assets; existing large-chunk warning |
-| `npm audit --json` | Exit 1: 31 moderate, 1 low, no high/critical findings |
+| `npm run test:e2e` | 7 Chromium tests passed |
 | `git diff --check` | Passed |
-| Linux/macOS / remote CI / human acceptance | Not executed |
+| Remote CI / Linux / macOS / human acceptance | Not executed for these changes |
 
-Snapshot tests include another writer, committed WAL, checksum/format rejection,
-attachment tampering, cancellation and process exit immediately before publication.
-Search failures roll back note/journal writes; rebuilding preserves canonical data.
-Companion tests reject missing/invalid credentials, foreign/null origins, bad hosts,
-writes, arbitrary path/SQL parameters and stale credentials after restart. Chromium
-checks explicit connection, Korean search, attachment download, no persisted token,
-unchanged Vault data and browser editing when the companion is unavailable.
+Evidence includes two-way note edits; three-client conflict-history convergence;
+English/Korean Yjs merging; concurrent rename/move fields; delete/edit/restore;
+attachment collisions and checksums; duplicate/reversed pages; stale cursors;
+provider loss/timeouts; overlapping sessions; upload acceptance before local ack;
+process exit inside download commit; outbox/ack/inbox write failures; schema
+migration rollback; backup/restore of pending operations/conflicts; legacy
+retention; and read-only Companion search against a schema 2 Vault.
 
-The first backup run exposed Windows rejecting fsync on a read-only file handle;
-the implementation now uses a writable handle only for its newly created files,
-and all backup tests pass. POSIX directory fsync is implemented but untested here.
-No functioning WSL/Linux distribution or Docker runtime was available. The updated
-CI matrix has not yet been observed running remotely.
+Testing found an FTS5 integrity callback reporting a checksum mismatch on a
+long-lived connection after another connection committed, while a fresh connection
+verified the same database. Opening the FTS cursor in the verification transaction
+before the callback refreshed its cached view; the multi-handle regression passes.
+A malformed self-parent snapshot is now rejected before conflict projection.
 
-Overall Phase B remains open for platform/recovery acceptance, actual disk-full
-and power-loss tests, large-Vault performance and broader rich-text coverage.
-Native browser writes and native-to-browser backup conversion are not implemented;
-native snapshots must not be presented as browser-importable backups. No E2EE,
-production Sync Engine or MCP was added. See the current native guide for CLI
-commands, rollback, session security boundaries and remaining memory limits.
+The principal simulated acceptance path is implemented and verified. Phase C-1
+is not a production sync release. Outstanding limits:
 
-Phase C entry point: specify provider-neutral records/conflict semantics, then add
-a transactional persistent outbox and immutable conflict history. Validate two
-independent Vaults against a deterministic provider before any production transport.
+- Cross-note cycles/deleted-parent references stop application safely; automatic
+  structural recovery and a conflict-resolution API are not implemented.
+- Full operation history and embedded attachments are expensive; no compaction,
+  large-Vault throughput or strict memory-budget claim is made. Operation JSON
+  is limited to 50 MiB including base64, potentially below native BLOB limits.
+- Missing parents can remain in the durable inbox indefinitely. The waiting count
+  and retained operation API expose them; there is no automatic remote reset.
+- Native snapshots preserve full import archives, but sync transfers note-level
+  recovery data rather than copying the complete browser import archive.
+- Raw filesystem clones must not edit under the same client identity. Use
+  `forkSyncClient()` on an independently edited restored copy.
+- Checksums do not authenticate hostile peers. Real authenticated providers,
+  resource budgets, E2EE, MCP, automatic scheduling and browser writes are absent.
+- Physical power loss/disk-full, remote OS CI, and representative large-data
+  recovery remain unverified; these Phase B acceptance items remain open.
+
+Phase C-2 entry: implement explicit structural/conflict recovery, benchmark and
+bound history/attachment processing, then specify authenticated durable-provider
+and epoch-recovery contracts. A separately authorised transport must pass the
+same fault suite plus real cross-device tests before any production claim.
 
 ## Previous browser milestone (historical)
 

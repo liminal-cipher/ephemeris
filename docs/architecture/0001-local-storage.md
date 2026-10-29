@@ -3,6 +3,8 @@
 Status: accepted for browser stabilisation; native transactions, isolated import,
 native snapshots, search and read-only companion integration implemented. See
 [Native Vault](../native-vault.md) for its API, verification and remaining limits.
+Explicitly enabled simulated synchronisation is specified in
+[ADR 0002](0002-native-sync.md); the browser companion remains read-only.
 
 ## Decision
 

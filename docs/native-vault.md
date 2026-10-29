@@ -1,8 +1,9 @@
 # Native Vault milestone
 
-Current integration work starts from fetched `main` at `e061cfd`, 29 October
-2026. Native snapshots, indexed search and an opt-in read-only browser companion
-are implemented. BrowserVault remains the browser editor's canonical store.
+Current Phase C-1 work starts from fetched `main` at `48079ae`, 29 October
+2026. Native snapshots, indexed search, the opt-in read-only browser companion
+and explicitly enabled simulated synchronisation are implemented. BrowserVault
+remains the browser editor's canonical store.
 There is no production Sync Engine or MCP server. Overall Phase B is not declared
 complete pending platform verification and the remaining acceptance work below.
 
@@ -41,10 +42,78 @@ Checking a hash alone is insufficient to protect metadata changes.
 The SQL connection and transaction machinery are private. Future adapters must
 call this API; no arbitrary SQL or unvalidated import entry point is exposed.
 The change journal has a durable sequence, note ID, version, kind, content hash
-and timestamp. It records changes, not full historical revisions or a durable
-sync outbox. Native writes replace a complete validated Yjs snapshot; callers
+and timestamp. Schema 2 adds an independent immutable sync outbox linked to local
+journal sequences, without replacing this journal. Native writes replace a
+complete validated Yjs snapshot; callers
 must merge updates in a Y.Doc and submit its full state. Incomplete deltas are
-rejected. Automatic conflict merging is deliberately deferred.
+rejected. The simulated sync engine merges compatible causal Yjs snapshots and
+independent metadata fields; ambiguous versions remain inspectable conflicts.
+
+## Explicit simulated synchronisation (Phase C-1)
+
+See [ADR 0002](architecture/0002-native-sync.md) for protocol 1, causality,
+transaction guarantees, recovery semantics, reference study and limitations.
+The engine and provider are UI-independent modules. They create no network
+listeners and are not invoked by opening a Vault or starting the browser.
+
+```js
+import { NativeVault } from './native/vault.js'
+import { SimulatedProvider } from './native/sync/simulatedProvider.js'
+import { synchronise } from './native/sync/engine.js'
+
+const a = NativeVault.create('/absolute/private/new-vault-a')
+const b = NativeVault.create('/absolute/private/new-vault-b')
+const provider = new SimulatedProvider() // In-memory test transport only.
+try {
+  a.enableSync()
+  b.enableSync()
+  a.create({ id: 'example', metadata: { title: 'Synthetic note' } })
+  await synchronise(a, provider)
+  await synchronise(b, provider)
+  console.log(b.read('example').metadata.title)
+} finally { a.close(); b.close() }
+```
+
+Use new absolute Windows paths on Windows. Parent directories must exist.
+`enableSync()` is an explicit, atomic schema 1 to 2 migration; take a native
+backup first for any existing Vault. It seeds baseline operations without changing
+native note bytes, versions or journals. Read-only handles cannot activate sync.
+
+`synchronise(vault, provider, options)` publishes bounded pending operations and
+downloads bounded pages. Options include an injected `now` clock, `limit` (1–100),
+`maxPages` (1–1000), `timeoutMs` (1–60000) and an AbortSignal. Results report
+uploaded/applied counts, dependency waiting count and whether immediate work
+remains. Inspect `syncStatus(targetId)` for retry times before scheduling another
+call. The caller owns scheduling and must move synchronous storage off an
+interactive thread. Edits remain available while the provider is disconnected.
+
+Storage API additions:
+
+| API | Purpose |
+| --- | --- |
+| `enableSync()`, `syncIdentity()` | Explicit migration and stable Vault/client IDs |
+| `connectSync(targetId, epoch)` | Bind target namespace; reject a changed epoch |
+| `pendingSync(targetId, { now, limit })` | Read eligible immutable outbound operations |
+| `acknowledgeSync(targetId, id, sha256)` | Idempotent matching acceptance |
+| `retrySync(targetId, id, now)` | Persist bounded exponential delay |
+| `receiveSync(targetId, expectedCursor, page)` | Atomically stage/apply a page and checkpoint |
+| `syncStatus(targetId)` | Cursor, deliveries and dependency waiting count |
+| `syncConflicts(noteId)` | Retained unresolved conflicts |
+| `retainedSyncOperation(id)` | Complete original operation and recovery snapshot |
+| `forkSyncClient()` | New client identity for an independently edited restored copy |
+
+None of these write APIs is exposed by the read-only HTTP companion. Sync requires
+trusted local invocation; operation checksums are not authentication. A remote
+provider must promise durable acceptance and enforce immutable IDs. The simulator
+tests the contract but does not provide real cross-device durability.
+
+Native snapshot format 1 accepts schema 1 and 2 and preserves sync state. Restore
+into a new directory and verify before use. If the original remains active, call
+`forkSyncClient()` on the restored copy before any new edits. The fork retains old
+operation IDs and pending deliveries; it changes only the author of future edits.
+An older Phase B binary must use a pre-activation schema 1 backup, never a database
+whose version field has been manually downgraded. Keep post-activation snapshots
+for recovering later edits; rollback to an older backup does not include them.
 
 ## API
 
@@ -192,7 +261,7 @@ version, overlays and tombstones. Test older builds in a separate profile.
 ## Native snapshots and isolated restoration
 
 Native backups use a directory containing `manifest.json` and `snapshot.sqlite`.
-Manifest format `ephemeris-native-snapshot`, version 1, supports native schema 1.
+Manifest format `ephemeris-native-snapshot`, version 1, supports native schemas 1 and 2.
 This is **not** a browser v2 backup and cannot be imported into the browser.
 Keep both files together. No tar/zip extraction or manifest-controlled paths run.
 
@@ -341,7 +410,7 @@ are recorded in the Phase B section of `ephemeris-2-handoff.md`. Remote CI and
 human acceptance are separate from those results.
 
 Known limits: no E2EE, multi-user identity/roles, native browser writes,
-production sync/outbox, compaction, native-to-browser backup conversion or full
+production transport, sync history compaction, native-to-browser backup conversion or full
 revision-history recovery. Session tokens authenticate local read access; they
 are not user accounts or encryption. Hashes detect accidental damage, not
 malicious rewriting. Schema and BLOB checks are not a complete hostile-database
@@ -354,7 +423,7 @@ remain relevant, particularly same-origin script execution risks.
 Physical power loss, hardware failure, actual disk-full I/O, Linux/macOS execution,
 large-Vault performance and human acceptance remain unverified locally. Linux CI
 is pending: no local WSL distribution or Docker runtime was available, and this
-work was not authorised for publication. Files are synchronised before snapshot
+Phase C-1 remote CI results have not been observed. Files are synchronised before snapshot
 publication; POSIX directory entries are also synchronised. Node's Windows API
 does not provide the corresponding directory fsync guarantee. Do not equate
 process-interruption tests with proof of power-loss durability.
@@ -367,19 +436,18 @@ strict memory budget: large metadata/documents are decoded before response-size
 checking. Use the local backup API/CLI for large recovery operations. Short-query
 searches scan the projection; large-Vault search performance is not benchmarked.
 
-## Next steps before and during Phase C
+## Next steps toward Phase C-2
 
 1. Finish Phase B acceptance: execute the Ubuntu/Windows CI matrix after an
    authorised publication; test macOS, actual disk-full failures, large Vaults and
    recovery on representative data copies. Extend codecs only with round-trip
    evidence. Native-to-browser export and native editor writes remain separate
    future contracts, not capabilities of this read-only milestone.
-2. Study upstream synchroniser/locking/conflict tests without copying AGPL code.
-   Specify a provider-neutral record format and deletion/conflict semantics.
-3. Extend transactions with a persistent outbox and immutable conflict/revision
-   records; define idempotency keys, attachment dependencies and remote cursors.
-4. Test two independent SQLite Vaults against a deterministic simulated provider:
-   duplicate/out-of-order delivery, disconnection, retries, deletion/edit races,
-   interrupted uploads and resumption. Do not treat local writer races as sync.
-5. Only after those contracts pass, implement and separately authorise a real
-   transport. MCP remains a later adapter over this same validated API.
+2. Add explicit conflict resolution and structural hierarchy recovery. Missing
+   dependencies wait durably; cyclic cross-note moves and deleted-parent references
+   currently stop application safely and need recovery outside automatic sync.
+3. Benchmark retained-history reconciliation and embedded attachment costs; define
+   chunking, bounded memory, history compaction and durable provider storage.
+4. Specify authenticated provider behaviour, epoch recovery and transport-level
+   fault contracts. Only then implement a separately authorised real transport.
+   MCP and E2EE remain later work; simulator results are not network reliability.
