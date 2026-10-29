@@ -1,0 +1,10 @@
+.native-open { position: fixed; right: 20px; bottom: 20px; z-index: 50; padding: 8px 14px; }
+.native-workspace { position: fixed; inset: 5vh 4vw; z-index: 1000; overflow: auto; background: #18181b; color: #f4f4f5; padding: 24px; border: 1px solid #71717a; border-radius: 12px; box-shadow: 0 0 0 10vw #0009; }
+.native-workspace header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.native-workspace button, .native-workspace input { margin: 6px; padding: 8px 12px; border: 1px solid #71717a; border-radius: 5px; background: #27272a; color: inherit; }
+.native-workspace button:disabled { opacity: .5; }
+.native-workspace pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow: auto; padding: 12px; background: #27272a; }
+.native-workspace [role="alert"] { color: #fca5a5; }
+.native-columns { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr); gap: 24px; }
+.native-workspace li { margin-block: 6px; }
+@media (max-width: 650px) { .native-columns { grid-template-columns: 1fr; } .native-workspace { inset: 12px; padding: 12px; } }
