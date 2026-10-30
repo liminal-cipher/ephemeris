@@ -7,7 +7,7 @@ describe('useStore', () => {
     useStore.setState({ activePageId: null });
   });
 
-  it('should initialize with activePageId as null', () => {
+  it('should initialise with activePageId as null', () => {
     const state = useStore.getState();
     expect(state.activePageId).toBeNull();
   });

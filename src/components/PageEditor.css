@@ -722,7 +722,7 @@
   border-radius: 0;
 }
 
-/* highlight.js token colors */
+/* highlight.js token colours */
 .hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-type, .hljs-addition { color: #569cd6; }
 .hljs-string, .hljs-meta .hljs-string, .hljs-doctag, .hljs-regexp { color: #ce9178; }
 .hljs-title, .hljs-section, .hljs-built_in, .hljs-name { color: #dcdcaa; }

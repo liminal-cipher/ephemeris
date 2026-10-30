@@ -1,6 +1,6 @@
 # Ephemeris 2: implementation and verification handoff
 
-## Phase C-1 simulated synchronisation ? 29 October 2026
+## Phase C-1 simulated synchronisation: 29 October 2026
 
 Baseline: clean fetched `main` at `48079ae`, following the published Phase B
 integration milestone. The user authorised focused commits and a push on

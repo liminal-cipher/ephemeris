@@ -2,7 +2,7 @@
 
 > A local-first note workspace that keeps every page in the browser and does not depend on a centralised application backend.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Licence: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-build-646CFF?logo=vite&logoColor=white)
 ![Yjs](https://img.shields.io/badge/Yjs-CRDT-FF9900)
@@ -16,7 +16,7 @@ Ephemeris is the first cut at the substrate that would need: a workspace where p
 ## What It Does
 
 - **Hierarchical Document Model:** Organise notes with infinitely nested sub-pages, drag-and-drop re-parenting, collapsible tree toggles, and interactive breadcrumbs.
-- **Collaborative Editing:** Edit notes with peers in real time over WebRTC without sending document contents through an application backend. WebRTC still uses signaling servers to establish peer connections.
+- **Collaborative Editing:** Edit notes with peers in real time over WebRTC without sending document contents through an application backend. WebRTC still uses signalling servers to establish peer connections.
 - **Unified Details Panel:** Access sub-pages and backlinks via a dockable panel (bottom or right sidebar) to maintain context without cluttering the editor.
 - **Graph View:** Visualise connections between pages linked via `[[wiki-link]]` syntax on an interactive 2D physics graph.
 - **Rich Text Editing:** Write using Tiptap's markdown-style input rules and keyboard shortcuts, complete with mathematical formulas (KaTeX), code blocks, and double-click whitespace trimming.
@@ -45,7 +45,7 @@ We use a hybrid architecture: `Dexie.js` powers the reactive sidebar metadata an
 | --- | --- | --- |
 | Storage | Dexie.js over raw IndexedDB | The native IndexedDB API is event-based and verbose for even simple queries. Dexie gives promises, and `useLiveQuery` turns a table into a reactive source, which removes the need for a data-fetching layer |
 | CRDT | Yjs over Automerge | Yjs has mature ProseMirror/Tiptap integration and modular persistence and sync providers such as `y-webrtc` and `y-indexeddb` |
-| Sync | y-webrtc over WebSocket server | WebRTC lets peers exchange CRDT updates directly without running an application backend. Signaling is still required to establish connections, so the current setup relies on public signaling servers |
+| Sync | y-webrtc over WebSocket server | WebRTC lets peers exchange CRDT updates directly without running an application backend. Signalling is still required to establish connections, so the current setup relies on public signalling servers |
 | Graph View | react-force-graph-2d over raw D3 | Provides a canvas-based physics simulation for note connections without manually managing D3 DOM updates inside React |
 | Editor | Tiptap over a textarea or a markdown parser | ProseMirror stores the document as structured JSON, not a string. Block-level features later depend on the content already being a tree |
 | State | Zustand over Context or Redux | Exactly one value is global, the active page id. That is six lines in Zustand and a provider tree in the alternatives |
@@ -53,7 +53,7 @@ We use a hybrid architecture: `Dexie.js` powers the reactive sidebar metadata an
 
 ## Results & Limitations
 
-- **Signaling Server Dependency.** While document data sync is P2P, WebRTC requires signaling servers to establish the initial connection. We currently rely on public signaling servers which are not guaranteed for production uptime.
+- **Signalling Server Dependency.** While document data sync is P2P, WebRTC requires signalling servers to establish the initial connection. We currently rely on public signalling servers which are not guaranteed for production uptime.
 - **Database size constraints.** Storing base64 cover images inline keeps pages self-contained, but the performance impact on Dexie.js and Yjs at scale remains unmeasured.
 
 ## Getting Started
@@ -72,17 +72,17 @@ Tests can be run with `npm run test`.
 
 ## Roadmap
 
-- [x] **Local-first core & CRDTs**: Offline workspace management with Yjs CRDTs, unified panels, and Graph View.
-- [ ] **Performance optimisation**: Virtualised rendering for the sidebar tree to support workspaces scaling past thousands of notes smoothly.
-- [x] **Cover media options**: Local image uploads, custom image URLs, and curated Unsplash presets for page covers.
-- [ ] **Multi-page bulk operations**: Dragging and re-parenting multi-selected notes simultaneously in the sidebar tree.
-- [ ] **Tiptap v3 upgrade**: Transition to Tiptap 3.x ecosystem once dependencies and collaboration APIs stabilise.
-- [ ] **Asynchronous sync (Relay Server)**: Lightweight encrypted relay (e.g. `y-websocket`) for asynchronous peer synchronisation.
+- [x] **Done:** Local-first core & CRDTs: Offline workspace management with Yjs CRDTs, unified panels, and Graph View.
+- [ ] **Next:** Performance optimisation: Virtualised rendering for the sidebar tree to support workspaces scaling past thousands of notes smoothly.
+- [x] **Done:** Cover media options: Local image uploads, custom image URLs, and curated Unsplash presets for page covers.
+- [ ] **Next:** Multi-page bulk operations: Dragging and re-parenting multi-selected notes simultaneously in the sidebar tree.
+- [ ] **Next:** Tiptap v3 upgrade: Transition to Tiptap 3.x ecosystem once dependencies and collaboration APIs stabilise.
+- [ ] **Next:** Asynchronous sync (Relay Server): Lightweight encrypted relay (e.g. `y-websocket`) for asynchronous peer synchronisation.
 
 ## Status
 
 In progress. Local development resumed. Last updated 2026-09-13.
 
-## License
+## Licence
 
 MIT. See [LICENSE](LICENSE).

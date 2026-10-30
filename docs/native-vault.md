@@ -304,7 +304,7 @@ the original browser profile; native restore never modifies its IndexedDB.
 
 ## Search and explicit content coverage
 
-FTS5 with the [trigram tokenizer](https://sqlite.org/fts5.html#the_trigram_tokenizer)
+FTS5 with the [trigram tokeniser](https://sqlite.org/fts5.html#the_trigram_tokenizer)
 is tested in the supported Node runtime. The additive index updates inside the
 same transaction as the note/version/journal. An index write failure rolls back
 the entire operation. Original Yjs and legacy records never depend on the index.
@@ -422,7 +422,7 @@ remain relevant, particularly same-origin script execution risks.
 
 Physical power loss, hardware failure, actual disk-full I/O, Linux/macOS execution,
 large-Vault performance and human acceptance remain unverified locally. Linux CI
-is pending: no local WSL distribution or Docker runtime was available, and this
+is pending: no local WSL distribution or Docker runtime was available, and the
 Phase C-1 remote CI results have not been observed. Files are synchronised before snapshot
 publication; POSIX directory entries are also synchronised. Node's Windows API
 does not provide the corresponding directory fsync guarantee. Do not equate
