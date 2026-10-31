@@ -21,7 +21,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
-      - name: Native storage and simulated sync tests
+      - name: Native storage, recovery and provider conformance
         run: npm run test:native
       - run: npm run build
       - run: npx playwright install --with-deps chromium
