@@ -67,7 +67,7 @@ async function validatedSnapshot(directory) {
   const manifestFile = path.join(root, 'manifest.json')
   if (regularFile(manifestFile).size > 4096) throw new Error('Invalid backup manifest')
   const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'))
-  if (manifest.format !== FORMAT || manifest.version !== 1 || ![1,2].includes(manifest.schemaVersion) || manifest.file !== 'snapshot.sqlite' || !/^[a-f0-9]{64}$/.test(manifest.sha256)) throw new Error('Incompatible native backup')
+  if (manifest.format !== FORMAT || manifest.version !== 1 || ![1,2,3].includes(manifest.schemaVersion) || manifest.file !== 'snapshot.sqlite' || !/^[a-f0-9]{64}$/.test(manifest.sha256)) throw new Error('Incompatible native backup')
   const file = path.join(root, 'snapshot.sqlite')
   for (const suffix of ['-wal', '-shm', '-journal']) if (existsSync(file + suffix)) throw new Error('Portable backup must not have SQLite sidecars')
   regularFile(file)

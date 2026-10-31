@@ -9,8 +9,10 @@ export function canonical(value) {
 export const hash = value => digest(canonical(value))
 export const equal = (a, b) => canonical(a) === canonical(b)
 export function decode(text) {
-  if (typeof text !== 'string' || text.length > MAX_BYTES * 2 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(text)) throw new Error('Invalid base64')
-  return Buffer.from(text, 'base64')
+  if (typeof text !== 'string' || text.length > MAX_BYTES * 2 || text.length%4!==0) throw new Error('Invalid base64')
+  const bytes=Buffer.from(text,'base64')
+  if(bytes.toString('base64')!==text)throw new Error('Invalid base64')
+  return bytes
 }
 export function snapshot(note, attachments) {
   return { id: note.id, metadata: note.metadata, document: Buffer.from(note.document).toString('base64'),
@@ -45,15 +47,29 @@ export function changedFields(before, after) {
 }
 export function validateOperation(op) {
   jsonValue(op)
-  if (!op || op.protocol !== 1 || !equal(Object.keys(op).sort(), ['protocol','id','vaultId','clientId','sequence','parents','snapshot','writes','sha256'].sort())) throw new Error('Unsupported sync operation')
+  const keys=['protocol','id','vaultId','clientId','sequence','parents','snapshot','writes','sha256']
+  if (op?.protocol===2) keys.push('resolution')
+  if (!op || ![1,2].includes(op.protocol) || !equal(Object.keys(op).sort(), keys.sort())) throw new Error('Unsupported sync operation')
   for (const key of ['id','vaultId','clientId']) identifier(op[key])
   if (!Number.isSafeInteger(op.sequence) || op.sequence < 1 || !Array.isArray(op.parents) || op.parents.length > 1000 || new Set(op.parents).size !== op.parents.length || op.parents.includes(op.id)) throw new Error('Invalid causality')
   op.parents.forEach(identifier); validateSnapshot(op.snapshot)
   const available = fields(op.snapshot)
   if (!Array.isArray(op.writes) || op.writes.length > 2000 || new Set(op.writes).size !== op.writes.length || op.writes.some(key => !Object.hasOwn(available, key))) throw new Error('Invalid field writes')
+  if (op.protocol===2) {
+    const r=op.resolution
+    if (!r || !equal(Object.keys(r).sort(),['conflicts','evidence','fields','references']) || !Array.isArray(r.conflicts) || r.conflicts.length!==1 || !Array.isArray(r.references) || r.references.length>1000 || !Array.isArray(r.fields) || r.fields.length!==1 || !op.writes.includes(r.fields[0]) || !Array.isArray(r.evidence) || r.evidence.length!==1) throw new Error('Invalid resolution')
+    for (const id of [...r.conflicts,...r.references]) identifier(id)
+    if (!r.references.length || new Set(r.references).size!==r.references.length) throw new Error('Invalid resolution references')
+    const c=r.evidence[0],field=c?.field?.startsWith('structure:')?'meta:parentId':c?.field==='delete-versus-edit'?'deleted':c?.field
+    if(!c || c.noteId!==op.snapshot.id || c.status!=='unresolved' || c.id!==r.conflicts[0] || !equal(c.operations,r.references) || field!==r.fields[0] || hash({noteId:c.noteId,field:c.field,ids:c.operations})!==c.id)throw new Error('Invalid resolution evidence')
+  }
   const { sha256, ...body } = op
   if (hash(body) !== sha256) throw new Error('Operation checksum mismatch')
   return op
+}
+
+export function expectedWrites(before,op) {
+  return [...new Set([...changedFields(before,op.snapshot),...(op.resolution?.fields??[])])].sort()
 }
 
 // An immutable per-note DAG. Versions and timestamps do not order replicas.
@@ -74,6 +90,23 @@ export function graph(operations) {
 
 export function reconcile(operations) {
   if (!operations.length) return { snapshot: null, conflicts: [], heads: [] }
+  // A linear history has no concurrent registers. Avoid constructing quadratic
+  // ancestor sets for the common repeated-edit case; preserve legacy unions.
+  if(operations.every(op=>op.parents.length<=1)) {
+    const map=new Map(operations.map(op=>[op.id,op])),parents=new Set(operations.flatMap(op=>op.parents))
+    const heads=operations.filter(op=>!parents.has(op.id))
+    if(heads.length===1) {
+      const seen=new Set();let op=heads[0]
+      while(op && !seen.has(op.id)){seen.add(op.id);op=op.parents.length?map.get(op.parents[0]):null}
+      if(seen.size===operations.length && operations.filter(op=>!op.parents.length).length===1) {
+        const s=structuredClone(heads[0].snapshot),sorted=[...operations].sort((a,b)=>a.id<b.id?-1:1)
+        s.recovery=operations.some(op=>op.snapshot.recovery)
+        s.legacyRecords=[...new Map(sorted.flatMap(op=>op.snapshot.legacyRecords).map(row=>[canonical(row),row])).values()]
+        validateSnapshot(s)
+        return {snapshot:s,conflicts:[],heads:[heads[0].id]}
+      }
+    }
+  }
   const { ancestors, heads } = graph(operations), registers = new Map(), conflicts = []
   const sorted = [...operations].sort((a,b) => a.id < b.id ? -1 : 1)
   const compatibleDocuments = entries => {

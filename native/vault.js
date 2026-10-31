@@ -8,8 +8,9 @@ import { APPLICATION_ID, verifyDatabase } from './integrity.js'
 import { exportSnapshot } from './backup.js'
 import { projectText, searchProjection, pageOptions } from './textProjection.js'
 import { convertPlainLegacy } from './legacyCodec.js'
-import { SyncStore, migrateSync } from './sync/store.js'
+import { SyncStore, migrateSync, SYNC_TABLES } from './sync/store.js'
 import { snapshot, decode, equal } from './sync/protocol.js'
+import { migrateRecovery, requested, hierarchy, RECOVERY_TABLES } from './sync/recovery.js'
 
 const ACCESS = Symbol('Vault construction')
 
@@ -76,10 +77,12 @@ export class NativeVault {
         `)
       } else {
         if (this.#db.prepare('PRAGMA application_id').get().application_id !== APPLICATION_ID ||
-            ![1,2].includes(this.#db.prepare('PRAGMA user_version').get().user_version)) throw new Error('Unsupported Vault schema')
+            ![1,2,3].includes(this.#db.prepare('PRAGMA user_version').get().user_version)) throw new Error('Unsupported Vault schema')
         if (this.#db.prepare('PRAGMA quick_check').get().quick_check !== 'ok' || this.#db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Corrupt Vault')
         // Fail closed on incomplete schemas before accepting writes.
         for (const table of ['notes', 'attachments', 'changes', 'imports']) this.#db.prepare(`SELECT * FROM ${table} LIMIT 0`).all()
+        const schema=this.#db.prepare('PRAGMA user_version').get().user_version
+        for(const table of [...(schema>=2?SYNC_TABLES:[]),...(schema===3?RECOVERY_TABLES:[])])this.#db.prepare(`SELECT * FROM ${table} LIMIT 0`).all()
         if (!readOnly) this.#db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL')
       }
       if (!readOnly && !this.#db.prepare("SELECT name FROM sqlite_schema WHERE name='search_fts'").get()) this.rebuildSearch()
@@ -135,11 +138,11 @@ export class NativeVault {
     }
   }
 
-  #journal(id, version, kind, hash) {
+  #journal(id, version, kind, hash, parentIntent=false) {
     const result = this.#db.prepare('INSERT INTO changes(note_id,version,kind,content_hash,recorded_at) VALUES(?,?,?,?,?)')
       .run(id, version, kind, hash, new Date().toISOString())
     this.#index(id)
-    if (!this.#applyingSync && this.#db.prepare('PRAGMA user_version').get().user_version === 2) this.#sync().record(id, Number(result.lastInsertRowid))
+    if (!this.#applyingSync && this.#db.prepare('PRAGMA user_version').get().user_version >= 2) this.#sync().record(id, Number(result.lastInsertRowid),{parentIntent})
   }
 
   #index(id) {
@@ -219,7 +222,7 @@ export class NativeVault {
         (expected.contentHash !== undefined && expected.contentHash !== row.content_hash)) throw new ConflictError()
   }
 
-  #change(id, expected, kind, mutate) {
+  #change(id, expected, kind, mutate, parentIntent=false) {
     return this.#transaction(() => {
       const row = this.#row(id)
       this.#expected(row, expected)
@@ -228,7 +231,7 @@ export class NativeVault {
       const encoded = metadata(next.metadata), bytes = nativeUpdate(next.document), hash = digest(bytes)
       this.#db.prepare('UPDATE notes SET metadata=?,document=?,content_hash=?,version=version+1,deleted=?,content_state=? WHERE id=?')
         .run(encoded, bytes, hash, next.deleted === null ? null : jsonValue(next.deleted), next.contentState, id)
-      this.#journal(id, row.version + 1, kind, hash)
+      this.#journal(id, row.version + 1, kind, hash, parentIntent)
       return this.read(id)
     })
   }
@@ -246,7 +249,7 @@ export class NativeVault {
         if (next.contentState !== 'native') throw new Error('Legacy-only content requires an explicit lossless conversion before editing')
         next.document = changes.document
       }
-    })
+    }, Boolean(changes.metadata && Object.hasOwn(changes.metadata,'parentId')))
   }
 
   rename(id, title, expected) { return this.update(id, { metadata: { title } }, expected) }
@@ -269,7 +272,7 @@ export class NativeVault {
       if (next.deleted === null) throw new Error('Note is not deleted')
       next.deleted = null
       next.metadata.parentId = null
-    })
+    },true)
   }
 
   putAttachment(noteId, { id = randomUUID(), bytes, metadata: fields = {} }, expected) {
@@ -331,16 +334,16 @@ export class NativeVault {
   #syncSnapshot(id) { return snapshot(this.read(id), this.listAttachments(id).map(a => this.readAttachment(id,a.id))) }
 
   #sync() {
-    if (this.#db.prepare('PRAGMA user_version').get().user_version !== 2) throw new Error('Synchronisation is not enabled')
-    return new SyncStore(this.#db, id => this.#syncSnapshot(id), value => this.#applySync(value))
+    if (![2,3].includes(this.#db.prepare('PRAGMA user_version').get().user_version)) throw new Error('Synchronisation is not enabled')
+    return new SyncStore(this.#db, id => this.#syncSnapshot(id), (value,safe) => this.#applySync(value,safe))
   }
 
-  #applySync(value) {
+  #applySync(value, safeHierarchy=false) {
     const exists = this.#db.prepare('SELECT id FROM notes WHERE id=?').get(value.id)
     if (exists && equal(this.#syncSnapshot(value.id),value)) return
     // Cross-note hierarchy violations stop the page transaction. They never
     // bypass the same hierarchy checks used by local moves.
-    if (value.deleted === null && !value.recovery) this.#parent(value.id,value.metadata.parentId)
+    if (!safeHierarchy && value.deleted === null && !value.recovery) this.#parent(value.id,value.metadata.parentId)
     this.#applyingSync = true
     try {
       const bytes=decode(value.document), hash=digest(bytes)
@@ -367,9 +370,32 @@ export class NativeVault {
   }
 
   syncIdentity() { return this.#sync().identity() }
+  enableRecovery() {
+    return this.#transaction(()=>{
+      const store=this.#sync()
+      if(!store.recoveryEnabled){verifyDatabase(this.#db);migrateRecovery(store)}
+      return store.identity()
+    })
+  }
+  requestedSyncNote(id) { return requested(this.#sync(),id).snapshot }
+  syncHeads(id) { return requested(this.#sync(),id).heads }
+  syncRecovery() {
+    const rows=this.#db.prepare('SELECT note_id,parent_id,deleted,recovery,writers FROM sync_projection ORDER BY note_id').all()
+    const waiting=this.#db.prepare('SELECT o.id,o.note_id,d.parent_id FROM sync_operations o JOIN sync_dependencies d ON d.operation_id=o.id LEFT JOIN sync_operations p ON p.id=d.parent_id WHERE o.applied=0 AND (p.id IS NULL OR p.applied=0) ORDER BY o.id,d.parent_id LIMIT 100').all()
+    return [...hierarchy(rows).values(),...waiting.map(row=>({noteId:row.note_id,operations:[row.id],missing:row.parent_id,reason:'missing-causal-dependency',status:'waiting'}))]
+  }
+  resolveSyncConflict(id,conflictId,decision,expected) {
+    return this.#transaction(()=>{
+      const row=this.#row(id);this.#expected(row,expected)
+      const sequence=Number(this.#db.prepare('INSERT INTO changes(note_id,version,kind,content_hash,recorded_at) VALUES(?,?,?,?,?)').run(id,row.version,'resolution-intent',row.content_hash,new Date().toISOString()).lastInsertRowid)
+      const operationId=this.#sync().resolve(id,conflictId,decision,expected,sequence)
+      return {operationId,note:this.read(id)}
+    })
+  }
   forkSyncClient() { return this.#transaction(() => this.#sync().forkClient()) }
   connectSync(target,epoch) { return this.#transaction(() => this.#sync().connect(target,epoch)) }
-  pendingSync(target,{now=Date.now(),limit=100}={}) { return this.#sync().pending(target,now,limit) }
+  pendingSync(target,{now=Date.now(),limit=100,maxBytes}={}) { return this.#sync().pending(target,now,limit,maxBytes) }
+  syncCheckpoint(target) { return this.#sync().target(target) }
   acknowledgeSync(target,id,sha256) { return this.#transaction(() => this.#sync().acknowledge(target,id,sha256)) }
   retrySync(target,id,now=Date.now()) { return this.#transaction(() => this.#sync().retry(target,id,now)) }
   receiveSync(target,cursor,page) { return this.#transaction(() => this.#sync().receive(target,cursor,page)) }

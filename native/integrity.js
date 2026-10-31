@@ -9,7 +9,7 @@ export const APPLICATION_ID = 1162889293
 // The caller holds a read transaction or owns an unpublished immutable snapshot.
 export function verifyDatabase(db) {
   if (db.prepare('PRAGMA application_id').get().application_id !== APPLICATION_ID ||
-      ![1,2].includes(db.prepare('PRAGMA user_version').get().user_version)) throw new Error('Unsupported Vault schema')
+      ![1,2,3].includes(db.prepare('PRAGMA user_version').get().user_version)) throw new Error('Unsupported Vault schema')
   const hasSearch = Boolean(db.prepare("SELECT name FROM sqlite_schema WHERE name='search_fts'").get())
   // Open the virtual-table cursor in this transaction before SQLite's FTS5
   // integrity callback, refreshing caches after another connection's commits.
@@ -58,6 +58,6 @@ export function verifyDatabase(db) {
     add(row)
   }
   if (hasSearch && db.prepare('SELECT count(*) AS count FROM search_fts').get().count !== notes) throw new Error('Search projection integrity failure; rebuild required')
-  if (db.prepare('PRAGMA user_version').get().user_version === 2) verifySync(db,add)
+  if (db.prepare('PRAGMA user_version').get().user_version >= 2) verifySync(db,add)
   return { notes, attachments, contentHash: hash.digest('hex') }
 }
