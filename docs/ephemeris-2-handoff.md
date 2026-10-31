@@ -1,87 +1,106 @@
 # Ephemeris 2: implementation and verification handoff
 
-## Phase C-1 simulated synchronisation: 29 October 2026
+## Phase C-2 recovery and resource safety: 1 November 2026
 
-Baseline: clean fetched `main` at `48079ae`, following the published Phase B
-integration milestone. The user authorised focused commits and a push on
-29 October 2026. Deployment and real-user migration remain outside this scope.
+Baseline: fetched clean `main` at `6849de7`, including the documentation update
+following C-1. The applicable engineering policy was verified. The user
+authorised focused commits and a push after reviewing the local milestone.
+Deployment, production transport and real-user migration remain outside scope.
 
 Implemented:
 
-- `native/sync/protocol.js`: versioned full-snapshot operations, causal parents,
-  field registers, compatible Yjs merging, deletion precedence and deterministic
-  unresolved conflicts with both original versions retained.
-- `native/sync/store.js` and `native/vault.js`: explicit additive schema 1 to 2
-  migration, stable identities, transactional outbox, per-target deliveries,
-  durable retry state, incoming dependency staging and atomic cursor application.
-  The existing journal and search index remain in each mutation transaction.
-- `native/sync/engine.js`: bounded asynchronous orchestration, acceptance checks,
-  timeouts, cancellation, resumable cursors and no remote echo IDs. Explicit call
-  only; no network listeners, credentials, production transport or background sync.
-- `native/sync/simulatedProvider.js`: deterministic provider with immutable IDs,
-  epoch/cursor checks, exported test state, fault injection and page transforms.
-- Native backup/verification now preserve schema 2 operations, delivery state,
-  conflicts and checkpoints, while retaining schema 1 support. A restored copy
-  must fork its client identity before being edited alongside the original.
-- `native/test/sync.test.js` and `sync-worker.js`: 30 new tests with independent
-  directories, reopen assertions, child-process exits and transaction failures.
-  The existing Ubuntu/Windows native-test step discovers them automatically.
+- `native/sync/recovery.js`: explicit atomic schema 3 migration, requested
+  hierarchy cache, deterministic safe tree, immutable structural evidence and
+  explicit one-field conflict resolution with version/causal-head checks.
+- `native/sync/protocol.js`, `store.js`, `vault.js`: synchronisable protocol 2
+  resolution records carry original conflict evidence, references and forced
+  field writes. Original snapshots remain immutable. Resolutions, hierarchy,
+  journal, search and cursor updates share a transaction. Schema 1/2 operations
+  remain supported; schema 3 is opt-in on every participating peer.
+- `native/backup.js`, `integrity.js`: schema 3 verification and isolated restore,
+  preserving identities and recovery records. Incomplete schemas and corrupt
+  migration input are rejected; migration failure rolls back.
+- `native/sync/limits.js`, `engine.js`, `simulatedProvider.js`: count/byte limits,
+  bounded ready-operation draining, indexed causal dependencies, lightweight
+  checkpoints, namespace binding and permanent authentication error handling.
+- `native/test/recovery.test.js`, `recovery-worker.js`, `provider.test.js` and
+  reusable `provider-conformance.js`: convergence, competing/stale decisions,
+  close/reopen, snapshot recovery, child-process termination, transaction/index
+  errors, waiting dependencies, resource limits and provider faults.
+- Two reproducible benchmark scripts and the existing Windows/Ubuntu CI command
+  include the new tests. No dependency, browser write API or network service was
+  added. No AGPL source was copied.
 
-[ADR 0002](architecture/0002-native-sync.md) is authoritative for protocol,
-reference-study findings, retained versions, recovery and current limits.
-[Native Vault](native-vault.md) contains API examples and backup/rollback commands.
-No AGPL implementation was copied; no new dependency was added.
+[ADR 0003](architecture/0003-sync-recovery.md) defines the recovery and provider
+contracts. [Native Vault](native-vault.md) contains API and migration examples;
+[benchmarks](sync-benchmarks.md) records actual datasets and measured constraints.
+ADR 0002 remains the schema 2/protocol 1 historical baseline.
 
-Observed on Windows / Node 24.20.0, synthetic data only:
+Local verification on Windows / Node 24.20.0, synthetic data only:
 
 | Command | Actual result |
 | --- | --- |
-| `npm ci` | Passed; reported 31 moderate and 1 low dependency advisories |
+| `npm ci` | Passed; 267 packages, 31 moderate and 1 low dependency advisories |
 | `npm run lint` | Exit 0; existing browser warnings only |
-| `npm test` | 56 passed in 10 files |
-| `npm run test:native` | 67 passed, including 30 sync tests; no failures/skips |
+| `npm test` | 56 passed in 10 files; no failures/skips |
+| `npm run test:native` | 91 passed; no failures/skips |
 | `npm run build` | Passed; 66 offline assets; existing large-chunk warning |
-| `npm run test:e2e` | 7 Chromium tests passed |
+| `npm run test:e2e` | 7 Chromium tests passed; no failures/skips |
 | `git diff --check` | Passed |
 | Remote CI / Linux / macOS / human acceptance | Not executed for these changes |
 
-Evidence includes two-way note edits; three-client conflict-history convergence;
-English/Korean Yjs merging; concurrent rename/move fields; delete/edit/restore;
-attachment collisions and checksums; duplicate/reversed pages; stale cursors;
-provider loss/timeouts; overlapping sessions; upload acceptance before local ack;
-process exit inside download commit; outbox/ack/inbox write failures; schema
-migration rollback; backup/restore of pending operations/conflicts; legacy
-retention; and read-only Companion search against a schema 2 Vault.
+Recovery evidence includes cross-note cycles, deleted/missing parents, delayed
+causal ancestors, explicit hierarchy repair and parent restoration, same/different
+concurrent resolutions, resolution/edit/deletion races, retained incompatible
+Yjs versions and attachment collisions. A newly bootstrapped peer receives old
+conflict provenance through resolution records. Process termination before repair
+COMMIT preserves every original row. Native snapshots retain resolution state.
 
-Testing found an FTS5 integrity callback reporting a checksum mismatch on a
-long-lived connection after another connection committed, while a fresh connection
-verified the same database. Opening the FTS cursor in the verification transaction
-before the callback refreshed its cached view; the multi-handle regression passes.
-A malformed self-parent snapshot is now rejected before conflict projection.
+Resource evidence includes 2,000 notes, 1,000 repeated edits, 64 divergent writers
+with 2,016 retained conflicts, a lagging second target, a 1 MiB Yjs document and a
+32 MiB attachment. The latter peaked near 1 GiB RSS and its next full-snapshot
+edit hit the 64 MiB per-note history budget. This is a limitation, not production
+capacity evidence. The large-payload experiment exposed a Base64 regexp stack
+overflow; canonical decode/re-encode validation fixes it with regression coverage.
 
-The principal simulated acceptance path is implemented and verified. Phase C-1
-is not a production sync release. Outstanding limits:
+Migration and recovery:
 
-- Cross-note cycles/deleted-parent references stop application safely; automatic
-  structural recovery and a conflict-resolution API are not implemented.
-- Full operation history and embedded attachments are expensive; no compaction,
-  large-Vault throughput or strict memory-budget claim is made. Operation JSON
-  is limited to 50 MiB including base64, potentially below native BLOB limits.
-- Missing parents can remain in the durable inbox indefinitely. The waiting count
-  and retained operation API expose them; there is no automatic remote reset.
-- Native snapshots preserve full import archives, but sync transfers note-level
-  recovery data rather than copying the complete browser import archive.
-- Raw filesystem clones must not edit under the same client identity. Use
-  `forkSyncClient()` on an independently edited restored copy.
-- Checksums do not authenticate hostile peers. Real authenticated providers,
-  resource budgets, E2EE, MCP, automatic scheduling and browser writes are absent.
-- Physical power loss/disk-full, remote OS CI, and representative large-data
-  recovery remain unverified; these Phase B acceptance items remain open.
+1. Export and verify a native backup, keeping the source Vault untouched.
+2. Explicitly call `enableSync()` for schema 1, then `enableRecovery()` for schema
+   2. Upgrade all peers before exchanging protocol 2 resolutions. Never manually
+   change schema versions or remove operation history.
+3. Inspect `syncRecovery()`, `syncConflicts(id)` and `retainedSyncOperation(id)`.
+   Resolve with an explicit field choice plus the current version and heads.
+   Re-read after a stale decision; do not force an overwrite.
+4. Restore snapshots only into new isolated directories and verify them. Before
+   editing alongside the original, call `forkSyncClient()`. Keep the original
+   identity on recovery of the sole active device.
+5. An older binary requires a pre-upgrade backup. Preserve current schema 3 data
+   separately because rollback does not include later edits. A reached history
+   limit has no automatic compaction escape hatch; keep all recovery evidence.
 
-Phase C-2 entry: implement explicit structural/conflict recovery, benchmark and
-bound history/attachment processing, then specify authenticated durable-provider
-and epoch-recovery contracts. A separately authorised transport must pass the
-same fault suite plus real cross-device tests before any production claim.
+Remaining work before production transport:
+
+- Stream/chunk attachment payloads and reduce full-snapshot copying. Current
+  per-note budgets can block legitimate edits; total database/RSS and nonlinear
+  conflict growth remain unbounded. Define safe retention for offline clients,
+  multiple providers, unresolved versions and restored/forked Vaults first.
+- Implement an authenticated, durable provider in a separately scoped milestone.
+  Enforce tenant isolation, revocation and byte limits before network buffering;
+  prove crash durability, cursor expiry and epoch disaster recovery against the
+  conformance suite plus real server tests. Checksums are not authentication.
+- Run and inspect Windows/Ubuntu remote CI after publication. Complete
+  representative large-data, physical power-loss/disk-full and human acceptance
+  work. E2EE, automatic scheduling, MCP and browser writes remain out of scope.
+- Missing causal history can remain staged indefinitely. Historical structural
+  observations may remain unresolved after the live condition disappears. There
+  is no full resolution UI, bulk multi-field resolution or automatic remote reset.
+- Native snapshots preserve full browser import archives; note sync still does
+  not replicate an entire browser import archive. Dependency advisories remain.
+
+This is a tested local recovery milestone, not completion of Phase C or proof of
+real cross-device synchronisation. Historical sections below describe earlier
+browser work and do not override the current status above.
 
 ## Previous browser milestone (historical)
 

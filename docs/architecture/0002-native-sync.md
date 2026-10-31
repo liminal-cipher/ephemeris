@@ -3,6 +3,11 @@
 Status: Phase C-1 simulated implementation. Local simulator
 only; no production provider, credentials, encryption or browser write API.
 
+Schema 2 behaviour is retained below. Explicit schema 3 recovery, protocol 2
+resolutions and current resource/provider contracts are defined in
+[ADR 0003](0003-sync-recovery.md), which supersedes the structural-recovery and
+resolution limitations below for upgraded Vaults.
+
 ## Contract and transaction boundary
 
 `enableSync()` explicitly upgrades schema 1 to schema 2 in one transaction.

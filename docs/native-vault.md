@@ -1,8 +1,8 @@
 # Native Vault milestone
 
-Current Phase C-1 work starts from fetched `main` at `48079ae`, 29 October
-2026. Native snapshots, indexed search, the opt-in read-only browser companion
-and explicitly enabled simulated synchronisation are implemented. BrowserVault
+Current Phase C-2 work starts from fetched `main` at `6849de7`, 1 November
+2026. Native snapshots, indexed search, the opt-in read-only browser companion,
+simulated synchronisation and explicit conflict recovery are implemented. BrowserVault
 remains the browser editor's canonical store.
 There is no production Sync Engine or MCP server. Overall Phase B is not declared
 complete pending platform verification and the remaining acceptance work below.
@@ -98,7 +98,7 @@ Storage API additions:
 | `retrySync(targetId, id, now)` | Persist bounded exponential delay |
 | `receiveSync(targetId, expectedCursor, page)` | Atomically stage/apply a page and checkpoint |
 | `syncStatus(targetId)` | Cursor, deliveries and dependency waiting count |
-| `syncConflicts(noteId)` | Retained unresolved conflicts |
+| `syncConflicts(noteId)` | Retained conflicts; schema 3 includes derived resolution status |
 | `retainedSyncOperation(id)` | Complete original operation and recovery snapshot |
 | `forkSyncClient()` | New client identity for an independently edited restored copy |
 
@@ -107,13 +107,69 @@ trusted local invocation; operation checksums are not authentication. A remote
 provider must promise durable acceptance and enforce immutable IDs. The simulator
 tests the contract but does not provide real cross-device durability.
 
-Native snapshot format 1 accepts schema 1 and 2 and preserves sync state. Restore
+Native snapshot format 1 accepts schemas 1, 2 and 3 and preserves sync state. Restore
 into a new directory and verify before use. If the original remains active, call
 `forkSyncClient()` on the restored copy before any new edits. The fork retains old
 operation IDs and pending deliveries; it changes only the author of future edits.
 An older Phase B binary must use a pre-activation schema 1 backup, never a database
 whose version field has been manually downgraded. Keep post-activation snapshots
 for recovering later edits; rollback to an older backup does not include them.
+
+## Explicit conflict recovery (Phase C-2)
+
+[ADR 0003](architecture/0003-sync-recovery.md) defines the implemented recovery
+rules, protocol 2 resolution records and future provider contract. All peers
+exchanging resolutions must explicitly upgrade. Opening a Vault never upgrades
+it or starts synchronisation.
+
+For an existing Vault, export and verify a native backup first. Then call
+`enableSync()` if still on schema 1 and `enableRecovery()` to move schema 2 to 3.
+The latter is atomic and idempotent; failure leaves the previous schema intact.
+There is no in-place downgrade. To use an older binary, restore the pre-upgrade
+backup into an isolated new directory; it will not contain subsequent edits.
+Keep the upgraded Vault and a current native backup for recovering those edits.
+Never change `user_version` manually or delete sync tables.
+
+```js
+vault.enableRecovery() // Requires explicit enableSync() first.
+const id = 'example'
+const conflicts = vault.syncConflicts(id)
+const conflict = conflicts.find(c => c.status === 'unresolved' && c.field === 'meta:title')
+if (conflict) {
+  const expected = { ...vault.read(id), heads: vault.syncHeads(id) }
+  // Inspect these complete original versions before making a decision.
+  const originals = conflict.operations.map(op => vault.retainedSyncOperation(op))
+  console.log(originals)
+  vault.resolveSyncConflict(id, conflict.id, { value: 'Explicit merged title' }, expected)
+  // Alternatively choose a same-note competitor: { operationId: originals[0].id }.
+}
+```
+
+The API resolves one field at a time: title/metadata, parent ID, deletion state,
+document (canonical Base64 full Yjs state), or an entire checksummed attachment
+record. A stale version or causal-head list rejects the decision. Concurrent
+different decisions create another retained conflict. Original snapshots and
+attachment bytes remain accessible with `retainedSyncOperation()`; selecting a
+document never converts unsupported content. Deletion `value: null` is an explicit
+restore decision. Attachment collisions keep the same attachment ID; the unchosen
+bytes remain in recovery history rather than appearing as a second live file.
+
+`syncRecovery()` lists current structural problems and up to 100 waiting causal
+operations. `requestedSyncNote(id)` returns the original requested snapshot.
+Invalid parent edges temporarily appear at the root, with all affected IDs,
+operations and reasons retained. Resolve a structural conflict with a valid
+`{ value: parentId }` or `{ value: null }`. Related hierarchy/search changes commit
+atomically. Missing parents and explicit parent restoration can make old edges
+valid again; historical observations remain inspectable in `syncConflicts()`.
+
+`synchronise()` additionally accepts `maxBytes` (1 KiB–64 MiB) and `namespace`.
+Use `providerTargetId(info, namespace)` from `native/sync/engine.js` for the target
+key when inspecting a non-default namespace. Schema 3 admits at most 1,024
+operations and 64 MiB of retained operation JSON per note. Hitting a budget fails
+the whole mutation; it does not delete history. Full snapshots make large
+attachments expensive and can block subsequent edits. Read the actual
+[benchmarks and remaining limits](sync-benchmarks.md) before capacity planning.
+No write operation is exposed through the Companion.
 
 ## API
 
