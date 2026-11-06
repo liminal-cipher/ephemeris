@@ -8,7 +8,13 @@ const [command, source, destination, ...extra] = process.argv.slice(2)
 let vault
 try {
   if (extra.length) throw new Error('Too many arguments')
-  if (command === 'rebuild-search' && source && !destination) {
+  if (['enable-sync','enable-recovery','enable-payloads'].includes(command) && source && !destination) {
+    vault=NativeVault.open(source)
+    const method={'enable-sync':'enableSync','enable-recovery':'enableRecovery','enable-payloads':'enablePayloads'}[command]
+    console.log(JSON.stringify(vault[method]()))
+  } else if(command==='retention'&&source&&destination) {
+    vault=NativeVault.open(source,{readOnly:true});console.log(JSON.stringify(vault.syncRetention(destination)))
+  } else if (command === 'rebuild-search' && source && !destination) {
     vault = NativeVault.open(source)
     console.log(JSON.stringify({ indexed: vault.rebuildSearch(), ...vault.verifySearch() }))
   } else if (command === 'export' && source && destination) {

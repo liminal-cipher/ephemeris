@@ -3,6 +3,8 @@ import { identifier, jsonValue } from '../validation.js'
 import { canonical, equal, hash, changedFields, expectedWrites, validateOperation, graph, reconcile } from './protocol.js'
 import { cacheProjection, projectHierarchy, requested, conflictViews, resolutionSnapshot, hierarchy, RECOVERY_TABLES, projectionWriters } from './recovery.js'
 import { MAX_PAGE_BYTES, MAX_HISTORY_BYTES, MAX_HISTORY_OPERATIONS, MAX_APPLY_OPERATIONS, byteLimit, pageBytes } from './limits.js'
+import { retainContent, verifyPayloads, contentFromBytes } from './payloads.js'
+import { checkResources } from './resources.js'
 
 export const SYNC_TABLES = ['sync_identity','sync_operations','sync_targets','sync_delivery','sync_conflicts']
 export function migrateSync(db) {
@@ -21,7 +23,8 @@ export function migrateSync(db) {
 // exported to providers. Immutable operation snapshots are recovery history.
 export class SyncStore {
   constructor(db, read, apply) { this.db=db; this.read=read; this.apply=apply }
-  get recoveryEnabled() { return this.db.prepare('PRAGMA user_version').get().user_version===3 }
+  get recoveryEnabled() { return this.db.prepare('PRAGMA user_version').get().user_version>=3 }
+  get payloadsEnabled() { return this.db.prepare('PRAGMA user_version').get().user_version>=4 }
   identity() { const row=this.db.prepare('SELECT * FROM sync_identity WHERE singleton=1').get(); return { vaultId:row.vault_id, clientId:row.client_id } }
   forkClient() { this.db.prepare('UPDATE sync_identity SET client_id=? WHERE singleton=1').run(randomUUID()); return this.identity() }
   operations(noteId) {
@@ -35,6 +38,7 @@ export class SyncStore {
     const operations=this.operations(noteId), baseline=reconcile(operations), s=this.read(noteId)
     if(this.recoveryEnabled && baseline.snapshot && !parentIntent)s.metadata.parentId=baseline.snapshot.metadata.parentId
     const body={ protocol:1, id:randomUUID(), ...this.identity(), sequence, parents:baseline.heads, snapshot:s, writes:changedFields(baseline.snapshot,s) }
+    if(this.payloadsEnabled){body.protocol=3;body.resolution=null}
     const op={...body,sha256:hash(body)}
     this.insert(op,1)
     if(this.recoveryEnabled){cacheProjection(this,noteId);projectHierarchy(this,[noteId])}
@@ -44,6 +48,9 @@ export class SyncStore {
     const old=this.db.prepare('SELECT payload FROM sync_operations WHERE id=?').get(op.id)
     if (old) { if (!equal(JSON.parse(old.payload),op)) throw new Error('Operation identity reused'); return false }
     if(op.protocol===2 && !this.recoveryEnabled)throw new Error('Resolution requires explicit schema 3 upgrade')
+    if(op.protocol===3 && !this.payloadsEnabled)throw new Error('Chunked payloads require explicit schema 4 upgrade')
+    if(this.payloadsEnabled)checkResources(this.db,{operationBytes:Buffer.byteLength(canonical(op)),operations:1})
+    for(const a of op.snapshot.attachments)if(a.content)retainContent(this.db,a.content,a.sha256)
     if(this.recoveryEnabled) {
       const size=this.db.prepare('SELECT count(*) AS count,coalesce(sum(length(CAST(payload AS BLOB))),0) AS bytes FROM sync_operations WHERE note_id=?').get(op.snapshot.id)
       if(size.count>=MAX_HISTORY_OPERATIONS || size.bytes+Buffer.byteLength(canonical(op))>MAX_HISTORY_BYTES)throw new Error('Sync history resource limit; operation not committed')
@@ -69,6 +76,13 @@ export class SyncStore {
     }
     return this.target(id)
   }
+  restartTarget(id,expectedEpoch,epoch) {
+    identifier(epoch)
+    if(this.target(id).epoch!==expectedEpoch)throw new Error('Stale target recovery decision')
+    this.db.prepare("UPDATE sync_targets SET epoch=?,cursor='null' WHERE id=?").run(epoch,id)
+    this.db.prepare("UPDATE sync_delivery SET state='pending',attempts=0,retry_at=0 WHERE target_id=?").run(id)
+    return this.target(id)
+  }
   pending(id,now,limit,maxBytes=MAX_PAGE_BYTES) {
     this.target(id)
     byteLimit(maxBytes)
@@ -79,6 +93,10 @@ export class SyncStore {
       result.push(this.retained(row.id));bytes+=row.bytes
     }
     return result
+  }
+  queue(id) {
+    this.target(id)
+    return this.db.prepare("SELECT count(*) AS pending,min(d.retry_at) AS retryAt FROM sync_delivery d JOIN sync_operations o ON o.id=d.operation_id WHERE d.target_id=? AND d.state!='acknowledged' AND o.applied=1").get(id)
   }
   acknowledge(id,opId,sha256) {
     this.target(id); identifier(opId)
@@ -181,6 +199,12 @@ export class SyncStore {
     const result=resolutionSnapshot(this,noteId,conflictId,decision,expected)
     const base=requested(this,noteId)
     const body={protocol:2,id:randomUUID(),...this.identity(),sequence,parents:base.heads,snapshot:result.snapshot,resolution:result.resolution}
+    if(this.payloadsEnabled) {
+      body.protocol=3
+      // A pre-upgrade conflict can choose an inline attachment. Preserve its
+      // original evidence and use its exact bytes in the new representation.
+      body.snapshot.attachments=body.snapshot.attachments.map(a=>a.content?a:{id:a.id,metadata:a.metadata,sha256:a.sha256,content:contentFromBytes(this.db,Buffer.from(a.bytes,'base64'),a.sha256)})
+    }
     body.writes=expectedWrites(base.snapshot,body)
     const op={...body,sha256:hash(body)}
     this.insert(op,1)
@@ -191,7 +215,8 @@ export class SyncStore {
 }
 
 export function verifySync(db,add) {
-  const recovery=db.prepare('PRAGMA user_version').get().user_version===3
+  const recovery=db.prepare('PRAGMA user_version').get().user_version>=3
+  const payloads=db.prepare('PRAGMA user_version').get().user_version>=4
   const invalid=recovery?hierarchy(db.prepare('SELECT note_id,parent_id,deleted,recovery,writers FROM sync_projection').all()):new Map()
   for (const table of SYNC_TABLES) db.prepare(`SELECT * FROM ${table} LIMIT 0`).all()
   const identity=db.prepare('SELECT * FROM sync_identity').all()
@@ -200,6 +225,11 @@ export function verifySync(db,add) {
   const perNote=new Map()
   for (const row of db.prepare('SELECT * FROM sync_operations ORDER BY id').all()) {
     const op=validateOperation(JSON.parse(row.payload))
+    if(op.protocol===3 && !payloads)throw new Error('Invalid stored payload schema')
+    for(const a of op.snapshot.attachments)if(a.content) {
+      const row=db.prepare('SELECT manifest FROM sync_content WHERE sha256=?').get(a.sha256)
+      if(!row || !equal(JSON.parse(row.manifest),a.content))throw new Error('Missing content manifest')
+    }
     if (op.id!==row.id || op.snapshot.id!==row.note_id || op.clientId!==row.client_id || op.sequence!==row.sequence) throw new Error('Invalid stored sync operation')
     if (row.applied) { if (!perNote.has(row.note_id)) perNote.set(row.note_id,[]); perNote.get(row.note_id).push(op) }
   }
@@ -218,7 +248,7 @@ export function verifySync(db,add) {
     const note=db.prepare('SELECT * FROM notes WHERE id=?').get(expected.id)
     if (!note) throw new Error('Missing synchronised note')
     const actual={id:note.id,metadata:JSON.parse(note.metadata),document:Buffer.from(note.document).toString('base64'),deleted:note.deleted===null?null:JSON.parse(note.deleted),recovery:Boolean(note.recovery),legacyRecords:JSON.parse(note.legacy),contentState:note.content_state,
-      attachments:db.prepare('SELECT * FROM attachments WHERE note_id=? ORDER BY id').all(note.id).map(a=>({id:a.id,metadata:JSON.parse(a.metadata),bytes:Buffer.from(a.bytes).toString('base64'),sha256:a.sha256})).sort((a,b)=>a.id<b.id?-1:1)}
+      attachments:db.prepare('SELECT id,metadata,sha256 FROM attachments WHERE note_id=? ORDER BY id').all(note.id).map(a=>({id:a.id,metadata:JSON.parse(a.metadata),...(expected.attachments.find(item=>item.id===a.id)?.content?{content:JSON.parse(db.prepare('SELECT manifest FROM sync_content WHERE sha256=?').get(a.sha256)?.manifest??'null')}:{bytes:Buffer.from(db.prepare('SELECT bytes FROM attachments WHERE note_id=? AND id=?').get(note.id,a.id).bytes).toString('base64')}),sha256:a.sha256})).sort((a,b)=>a.id<b.id?-1:1)}
     if (!equal(actual,expected)) throw new Error('Sync materialisation integrity failure')
   }
   if (perNote.size!==db.prepare('SELECT count(*) AS count FROM notes').get().count) throw new Error('Missing sync baseline')
@@ -252,4 +282,5 @@ export function verifySync(db,add) {
     }
     for(const table of RECOVERY_TABLES)for(const row of db.prepare(`SELECT * FROM ${table} ORDER BY 1,2`).iterate())add(row)
   }
+  if(payloads)verifyPayloads(db,add)
 }

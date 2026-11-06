@@ -4,6 +4,8 @@ export const MAX_PAGE_BYTES=64*1024*1024
 export const MAX_HISTORY_BYTES=64*1024*1024
 export const MAX_HISTORY_OPERATIONS=1024
 export const MAX_APPLY_OPERATIONS=200
+export const MAX_CONFLICT_CHECKS=250000
+export const MAX_CONFLICTS=10000
 export function byteLimit(value=MAX_PAGE_BYTES) {
   if(!Number.isSafeInteger(value)||value<1024||value>MAX_PAGE_BYTES)throw new Error('Invalid sync byte limit')
   return value
@@ -23,4 +25,4 @@ export function pageBytes(page,limit=MAX_PAGE_BYTES) {
 export class ProviderError extends Error {
   constructor(code,message=code) {super(message);this.name='ProviderError';this.code=code}
 }
-export const permanentProviderError=error=>['UNAUTHENTICATED','FORBIDDEN','REVOKED','INVALID_OPERATION','OPERATION_TOO_LARGE','CURSOR_EXPIRED','EPOCH_CHANGED'].includes(error?.code)
+export const permanentProviderError=error=>['UNAUTHENTICATED','FORBIDDEN','REVOKED','INVALID_OPERATION','OPERATION_TOO_LARGE','CURSOR_EXPIRED','EPOCH_CHANGED','QUOTA_EXCEEDED','CORRUPT_STORAGE','INVALID_RESPONSE'].includes(error?.code)

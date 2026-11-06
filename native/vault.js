@@ -11,6 +11,8 @@ import { convertPlainLegacy } from './legacyCodec.js'
 import { SyncStore, migrateSync, SYNC_TABLES } from './sync/store.js'
 import { snapshot, decode, equal } from './sync/protocol.js'
 import { migrateRecovery, requested, hierarchy, RECOVERY_TABLES } from './sync/recovery.js'
+import { PAYLOAD_TABLES, migratePayloads, attachmentContent, materializeContent, readChunk, putChunk } from './sync/payloads.js'
+import { configureResources, retentionReport, checkResources } from './sync/resources.js'
 
 const ACCESS = Symbol('Vault construction')
 
@@ -77,12 +79,12 @@ export class NativeVault {
         `)
       } else {
         if (this.#db.prepare('PRAGMA application_id').get().application_id !== APPLICATION_ID ||
-            ![1,2,3].includes(this.#db.prepare('PRAGMA user_version').get().user_version)) throw new Error('Unsupported Vault schema')
+            ![1,2,3,4].includes(this.#db.prepare('PRAGMA user_version').get().user_version)) throw new Error('Unsupported Vault schema')
         if (this.#db.prepare('PRAGMA quick_check').get().quick_check !== 'ok' || this.#db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Corrupt Vault')
         // Fail closed on incomplete schemas before accepting writes.
         for (const table of ['notes', 'attachments', 'changes', 'imports']) this.#db.prepare(`SELECT * FROM ${table} LIMIT 0`).all()
         const schema=this.#db.prepare('PRAGMA user_version').get().user_version
-        for(const table of [...(schema>=2?SYNC_TABLES:[]),...(schema===3?RECOVERY_TABLES:[])])this.#db.prepare(`SELECT * FROM ${table} LIMIT 0`).all()
+        for(const table of [...(schema>=2?SYNC_TABLES:[]),...(schema>=3?RECOVERY_TABLES:[]),...(schema>=4?PAYLOAD_TABLES:[])])this.#db.prepare(`SELECT * FROM ${table} LIMIT 0`).all()
         if (!readOnly) this.#db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL')
       }
       if (!readOnly && !this.#db.prepare("SELECT name FROM sqlite_schema WHERE name='search_fts'").get()) this.rebuildSearch()
@@ -281,6 +283,7 @@ export class NativeVault {
     const encoded = jsonValue(fields), copy = Buffer.from(bytes), hash = digest(copy)
     return this.#change(noteId, expected, 'attachment', next => {
       if (next.deleted !== null || next.recovery) throw new Error('Cannot attach to a deleted or recovery-only note')
+      if(this.#db.prepare('PRAGMA user_version').get().user_version>=4)checkResources(this.#db,{attachmentBytes:copy.length})
       this.#db.prepare('INSERT INTO attachments(note_id,id,metadata,bytes,sha256) VALUES(?,?,?,?,?)')
         .run(noteId, id, encoded, copy, hash)
     })
@@ -331,10 +334,13 @@ export class NativeVault {
     return row.original
   }
 
-  #syncSnapshot(id) { return snapshot(this.read(id), this.listAttachments(id).map(a => this.readAttachment(id,a.id))) }
+  #syncSnapshot(id) {
+    if (this.#db.prepare('PRAGMA user_version').get().user_version < 4) return snapshot(this.read(id), this.listAttachments(id).map(a => this.readAttachment(id,a.id)))
+    return { ...snapshot(this.read(id), []), attachments: this.listAttachments(id).map(a => ({ id:a.id, metadata:a.metadata, sha256:a.sha256, content:attachmentContent(this.#db,id,a.id,a.sha256) })).sort((a,b)=>a.id<b.id?-1:1) }
+  }
 
   #sync() {
-    if (![2,3].includes(this.#db.prepare('PRAGMA user_version').get().user_version)) throw new Error('Synchronisation is not enabled')
+    if (![2,3,4].includes(this.#db.prepare('PRAGMA user_version').get().user_version)) throw new Error('Synchronisation is not enabled')
     return new SyncStore(this.#db, id => this.#syncSnapshot(id), (value,safe) => this.#applySync(value,safe))
   }
 
@@ -350,8 +356,15 @@ export class NativeVault {
       if (!exists) this.#insert({ ...value, document:bytes }, 'sync')
       else this.#db.prepare('UPDATE notes SET metadata=?,document=?,content_hash=?,version=version+1,deleted=?,recovery=?,legacy=?,content_state=? WHERE id=?')
         .run(metadata(value.metadata),bytes,hash,value.deleted===null?null:jsonValue(value.deleted),Number(value.recovery),jsonValue(value.legacyRecords),value.contentState,value.id)
-      for (const a of value.attachments) this.#db.prepare('INSERT INTO attachments VALUES(?,?,?,?,?) ON CONFLICT(note_id,id) DO UPDATE SET metadata=excluded.metadata,bytes=excluded.bytes,sha256=excluded.sha256')
-        .run(value.id,a.id,jsonValue(a.metadata),decode(a.bytes),a.sha256)
+      for (const a of value.attachments) {
+        const previous=this.#db.prepare('SELECT sha256,length(bytes) AS size FROM attachments WHERE note_id=? AND id=?').get(value.id,a.id)
+        if (previous?.sha256===a.sha256) this.#db.prepare('UPDATE attachments SET metadata=? WHERE note_id=? AND id=?').run(jsonValue(a.metadata),value.id,a.id)
+        else {
+          if(this.#db.prepare('PRAGMA user_version').get().user_version>=4)checkResources(this.#db,{attachmentBytes:(a.content?.size??Buffer.byteLength(a.bytes,'base64'))-(previous?.size??0)})
+          this.#db.prepare('INSERT INTO attachments VALUES(?,?,?,?,?) ON CONFLICT(note_id,id) DO UPDATE SET metadata=excluded.metadata,bytes=excluded.bytes,sha256=excluded.sha256')
+            .run(value.id,a.id,jsonValue(a.metadata),a.content?materializeContent(this.#db,a.content,a.sha256):decode(a.bytes),a.sha256)
+        }
+      }
       if (exists) this.#journal(value.id,this.read(value.id).version,'sync',hash)
     } finally { this.#applyingSync = false }
   }
@@ -377,6 +390,26 @@ export class NativeVault {
       return store.identity()
     })
   }
+  enablePayloads() {
+    return this.#transaction(()=>{
+      if (!this.#sync().recoveryEnabled) throw new Error('Enable recovery before payload migration')
+      if (this.#db.prepare('PRAGMA user_version').get().user_version===3) { verifyDatabase(this.#db); migratePayloads(this.#db) }
+      return this.#sync().identity()
+    })
+  }
+  hasSyncChunk(hash) {
+    if (!this.#sync().payloadsEnabled) throw new Error('Chunked payloads require explicit schema 4 upgrade')
+    return Boolean(this.#db.prepare('SELECT sha256 FROM sync_chunks WHERE sha256=?').get(hash))
+  }
+  readSyncChunk(hash) { this.#sync(); return readChunk(this.#db,hash) }
+  receiveSyncChunk(hash,bytes) {
+    return this.#transaction(()=>{
+      if (!this.#sync().payloadsEnabled) throw new Error('Chunked payloads require explicit schema 4 upgrade')
+      return putChunk(this.#db,hash,bytes)
+    })
+  }
+  configureSyncResources(limits) { return this.#transaction(()=>configureResources(this.#db,limits)) }
+  syncRetention(noteId) { this.#sync(); return retentionReport(this.#db,noteId) }
   requestedSyncNote(id) { return requested(this.#sync(),id).snapshot }
   syncHeads(id) { return requested(this.#sync(),id).heads }
   syncRecovery() {
@@ -394,7 +427,9 @@ export class NativeVault {
   }
   forkSyncClient() { return this.#transaction(() => this.#sync().forkClient()) }
   connectSync(target,epoch) { return this.#transaction(() => this.#sync().connect(target,epoch)) }
+  restartSyncTarget(target,expectedEpoch,epoch) { return this.#transaction(()=>this.#sync().restartTarget(target,expectedEpoch,epoch)) }
   pendingSync(target,{now=Date.now(),limit=100,maxBytes}={}) { return this.#sync().pending(target,now,limit,maxBytes) }
+  syncQueue(target) { return this.#sync().queue(target) }
   syncCheckpoint(target) { return this.#sync().target(target) }
   acknowledgeSync(target,id,sha256) { return this.#transaction(() => this.#sync().acknowledge(target,id,sha256)) }
   retrySync(target,id,now=Date.now()) { return this.#transaction(() => this.#sync().retry(target,id,now)) }

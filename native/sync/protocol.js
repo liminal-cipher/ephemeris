@@ -1,5 +1,7 @@
 import * as Y from 'yjs'
 import { identifier, metadata, jsonValue, nativeUpdate, digest, MAX_BYTES } from '../validation.js'
+import { validateContent, contentHash } from './payloads.js'
+import { MAX_CONFLICT_CHECKS, MAX_CONFLICTS } from './limits.js'
 
 export function canonical(value) {
   if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']'
@@ -27,7 +29,10 @@ export function validateSnapshot(s) {
   const ids = new Set()
   for (const a of s.attachments) {
     identifier(a.id)
-    if (ids.has(a.id) || !equal(Object.keys(a).sort(), ['id','metadata','bytes','sha256'].sort()) || digest(decode(a.bytes)) !== a.sha256) throw new Error('Attachment integrity failure')
+    const keys = a.content ? ['id','metadata','content','sha256'] : ['id','metadata','bytes','sha256']
+    if (ids.has(a.id) || !equal(Object.keys(a).sort(), keys.sort())) throw new Error('Attachment integrity failure')
+    if (a.content) { validateContent(a.content); contentHash(a.sha256) }
+    else if (digest(decode(a.bytes)) !== a.sha256) throw new Error('Attachment integrity failure')
     ids.add(a.id)
   }
   jsonValue(s)
@@ -48,14 +53,15 @@ export function changedFields(before, after) {
 export function validateOperation(op) {
   jsonValue(op)
   const keys=['protocol','id','vaultId','clientId','sequence','parents','snapshot','writes','sha256']
-  if (op?.protocol===2) keys.push('resolution')
-  if (!op || ![1,2].includes(op.protocol) || !equal(Object.keys(op).sort(), keys.sort())) throw new Error('Unsupported sync operation')
+  if (op?.protocol>=2) keys.push('resolution')
+  if (!op || ![1,2,3].includes(op.protocol) || !equal(Object.keys(op).sort(), keys.sort())) throw new Error('Unsupported sync operation')
   for (const key of ['id','vaultId','clientId']) identifier(op[key])
   if (!Number.isSafeInteger(op.sequence) || op.sequence < 1 || !Array.isArray(op.parents) || op.parents.length > 1000 || new Set(op.parents).size !== op.parents.length || op.parents.includes(op.id)) throw new Error('Invalid causality')
   op.parents.forEach(identifier); validateSnapshot(op.snapshot)
+  if (op.snapshot.attachments.some(a => op.protocol===3 ? !a.content : a.content)) throw new Error('Attachment protocol mismatch')
   const available = fields(op.snapshot)
   if (!Array.isArray(op.writes) || op.writes.length > 2000 || new Set(op.writes).size !== op.writes.length || op.writes.some(key => !Object.hasOwn(available, key))) throw new Error('Invalid field writes')
-  if (op.protocol===2) {
+  if (op.protocol===2 || (op.protocol===3 && op.resolution!==null)) {
     const r=op.resolution
     if (!r || !equal(Object.keys(r).sort(),['conflicts','evidence','fields','references']) || !Array.isArray(r.conflicts) || r.conflicts.length!==1 || !Array.isArray(r.references) || r.references.length>1000 || !Array.isArray(r.fields) || r.fields.length!==1 || !op.writes.includes(r.fields[0]) || !Array.isArray(r.evidence) || r.evidence.length!==1) throw new Error('Invalid resolution')
     for (const id of [...r.conflicts,...r.references]) identifier(id)
@@ -108,6 +114,8 @@ export function reconcile(operations) {
     }
   }
   const { ancestors, heads } = graph(operations), registers = new Map(), conflicts = []
+  let comparisons=0
+  const compare=()=>{if(++comparisons>MAX_CONFLICT_CHECKS)throw new Error('Sync conflict computation resource limit')}
   const sorted = [...operations].sort((a,b) => a.id < b.id ? -1 : 1)
   const compatibleDocuments = entries => {
     const common = sorted.filter(base => entries.every(op => ancestors.get(op.id).has(base.id)))
@@ -118,6 +126,7 @@ export function reconcile(operations) {
     })
   }
   const conflict = (field, entries) => {
+    if(conflicts.length>=MAX_CONFLICTS)throw new Error('Sync conflict evidence resource limit')
     const ids = entries.map(op => op.id).sort()
     conflicts.push({ id: hash({ noteId: sorted[0].snapshot.id, field, ids }), noteId: sorted[0].snapshot.id, field, operations: ids, status: 'unresolved' })
   }
@@ -131,8 +140,10 @@ export function reconcile(operations) {
     // Record every genuinely concurrent disagreeing pair, even after a later edit.
     // This makes retained history independent of delivery order and batch size.
     for (let i=0;i<entries.length;i++) for (let j=i+1;j<entries.length;j++) {
+      compare()
       const a=entries[i], b=entries[j]
-      if (!ancestors.get(a.id).has(b.id) && !ancestors.get(b.id).has(a.id) && !equal(fields(a.snapshot)[key], fields(b.snapshot)[key]) && (key!=='document' || !compatibleDocuments([a,b]))) conflict(key, [a,b])
+      const value = op => { const v=fields(op.snapshot)[key]; return key.startsWith('attachment:') && v ? {id:v.id,metadata:v.metadata,sha256:v.sha256} : v }
+      if (!ancestors.get(a.id).has(b.id) && !ancestors.get(b.id).has(a.id) && !equal(value(a), value(b)) && (key!=='document' || !compatibleDocuments([a,b]))) conflict(key, [a,b])
     }
     chosen[key] = fields(maximal[0].snapshot)[key]
     if (key === 'document' && maximal.length > 1) {
@@ -143,7 +154,7 @@ export function reconcile(operations) {
   // Concurrent delete versus any edit remains inspectable; deletion wins until
   // a restoration causally observes all deletion writers.
   for (const a of sorted.filter(op => op.writes.includes('deleted') && op.snapshot.deleted !== null)) {
-    for (const b of sorted) if (a !== b && !ancestors.get(a.id).has(b.id) && !ancestors.get(b.id).has(a.id) && b.snapshot.deleted === null) conflict('delete-versus-edit', [a,b])
+    for (const b of sorted) { compare(); if (a !== b && !ancestors.get(a.id).has(b.id) && !ancestors.get(b.id).has(a.id) && b.snapshot.deleted === null) conflict('delete-versus-edit', [a,b]) }
   }
   const s = { id: sorted[0].snapshot.id, metadata: {}, attachments: [] }
   for (const [key,value] of Object.entries(chosen)) {

@@ -1,5 +1,6 @@
 import { validateOperation, canonical } from './protocol.js'
-import { identifier } from '../validation.js'
+import { identifier, digest } from '../validation.js'
+import { CHUNK_BYTES, verifyContent } from './payloads.js'
 import { MAX_PAGE_BYTES, byteLimit, ProviderError } from './limits.js'
 
 // A deterministic simulator, not a network transport. Exported state can be
@@ -8,10 +9,12 @@ export class SimulatedProvider {
   #operations = []
   #faults = new Map()
   #pageTransform
-  constructor({id='simulated',epoch='generation-1',operations=[],namespace='default'}={}) {
+  #chunks = new Map()
+  constructor({id='simulated',epoch='generation-1',operations=[],namespace='default',chunks=[]}={}) {
     identifier(id); identifier(epoch)
     identifier(namespace);this.namespace=namespace
     this.id=id; this.epoch=epoch
+    for(const [hash,bytes] of chunks)this.#chunks.set(hash,Buffer.from(bytes,'base64'))
     for (const op of operations) this.#accept(op)
   }
   failNext(point, error=new Error('Simulated disconnection')) { this.#faults.set(point,error) }
@@ -22,9 +25,21 @@ export class SimulatedProvider {
     if (typeof fault==='function') await fault()
     else throw fault
   }
-  async info() { await this.#fault('info'); return {id:this.id,epoch:this.epoch,namespace:this.namespace,protocols:[1,2]} }
+  async info() { await this.#fault('info'); return {id:this.id,epoch:this.epoch,namespace:this.namespace,protocols:[1,2,3]} }
+  async hasChunk(hash,epoch) { if(epoch!==this.epoch)throw new ProviderError('EPOCH_CHANGED');return this.#chunks.has(hash) }
+  async putChunk(hash,bytes,epoch) {
+    if(epoch!==this.epoch)throw new ProviderError('EPOCH_CHANGED')
+    if(!(bytes instanceof Uint8Array)||!bytes.length||bytes.length>CHUNK_BYTES||digest(bytes)!==hash)throw new ProviderError('INVALID_OPERATION')
+    this.#chunks.set(hash,Buffer.from(bytes));return {sha256:hash,epoch}
+  }
+  async getChunk(hash,epoch) {
+    if(epoch!==this.epoch)throw new ProviderError('EPOCH_CHANGED')
+    if(!this.#chunks.has(hash))throw new Error('Missing content chunk')
+    return Buffer.from(this.#chunks.get(hash))
+  }
   #accept(operation) {
     const op=structuredClone(validateOperation(operation))
+    for(const a of op.snapshot.attachments)if(a.content)verifyContent(a.content,a.sha256,hash=>{const bytes=this.#chunks.get(hash);if(!bytes)throw new Error('Missing content chunk');return bytes})
     const prior=this.#operations.find(item=>item.id===op.id || (item.clientId===op.clientId && item.sequence===op.sequence))
     if (prior) { if (canonical(prior)!==canonical(op)) throw new Error('Provider idempotency collision'); return }
     this.#operations.push(op)
@@ -53,6 +68,6 @@ export class SimulatedProvider {
     const transform=this.#pageTransform;this.#pageTransform=undefined
     return transform?transform(page):page
   }
-  exportState() { return structuredClone({id:this.id,epoch:this.epoch,namespace:this.namespace,operations:this.#operations}) }
-  reset(epoch) { identifier(epoch); if (epoch===this.epoch) throw new Error('Reset requires a new epoch'); this.epoch=epoch; this.#operations=[] }
+  exportState() { return structuredClone({id:this.id,epoch:this.epoch,namespace:this.namespace,operations:this.#operations,chunks:[...this.#chunks].map(([hash,bytes])=>[hash,bytes.toString('base64')])}) }
+  reset(epoch) { identifier(epoch); if (epoch===this.epoch) throw new Error('Reset requires a new epoch'); this.epoch=epoch; this.#operations=[];this.#chunks.clear() }
 }

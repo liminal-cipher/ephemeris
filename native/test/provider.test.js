@@ -38,3 +38,13 @@ test('aggregate provider response size is rejected before cursor or note mutatio
   assert.equal(v.syncStatus(provider.id).cursor,null)
   assert.equal(v.read('n').metadata.title,'')
 })
+test('deferred retries are reported as remaining work until their retry time',async t=>{
+  const {v,provider}=await fixture(t)
+  provider.failNext('beforePublish')
+  await assert.rejects(synchronise(v,provider,{now:()=>0}))
+  const deferred=await synchronise(v,provider,{now:()=>1})
+  assert.equal(deferred.hasMore,true);assert.equal(deferred.retryAt,1000)
+  assert.equal(provider.exportState().operations.length,0)
+  const complete=await synchronise(v,provider,{now:()=>1000})
+  assert.equal(complete.hasMore,false);assert.equal(provider.exportState().operations.length,1)
+})

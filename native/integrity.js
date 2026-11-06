@@ -9,7 +9,7 @@ export const APPLICATION_ID = 1162889293
 // The caller holds a read transaction or owns an unpublished immutable snapshot.
 export function verifyDatabase(db) {
   if (db.prepare('PRAGMA application_id').get().application_id !== APPLICATION_ID ||
-      ![1,2,3].includes(db.prepare('PRAGMA user_version').get().user_version)) throw new Error('Unsupported Vault schema')
+      ![1,2,3,4].includes(db.prepare('PRAGMA user_version').get().user_version)) throw new Error('Unsupported Vault schema')
   const hasSearch = Boolean(db.prepare("SELECT name FROM sqlite_schema WHERE name='search_fts'").get())
   // Open the virtual-table cursor in this transaction before SQLite's FTS5
   // integrity callback, refreshing caches after another connection's commits.
