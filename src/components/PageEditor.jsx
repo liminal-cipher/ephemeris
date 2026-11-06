@@ -101,7 +101,8 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
 
   useEffect(() => {
     if (page && (page.title === '' || !page.title) && titleInputRef.current) {
-      setTimeout(() => titleInputRef.current?.focus(), 50)
+      const timer = setTimeout(() => titleInputRef.current?.focus(), 50)
+      return () => clearTimeout(timer)
     }
   }, [activePageId, page?.title])
 
@@ -149,7 +150,8 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
     ] : baseExtensions,
   }, [ydoc, provider])
 
-  const handleDeletePage = () => {
+  const handleDeletePage = event => {
+    event.currentTarget.focus()
     const pageTitle = page?.title || 'Untitled'
     showConfirm({
       title: 'Delete Page',

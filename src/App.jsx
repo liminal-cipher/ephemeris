@@ -31,7 +31,7 @@ function App() {
       {!nativeOpen && <CommandPalette />}
       <GlobalDialogHost />
       </>}
-      <button className="native-open" onClick={() => setNativeOpen(true)}>Native workspace</button>
+      <button className="native-open" onClick={event => { event.currentTarget.focus(); setNativeOpen(true) }}>Native workspace</button>
       </div>
       {nativeOpen && <NativeWorkspace onClose={() => setNativeOpen(false)} />}
     </div>

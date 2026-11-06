@@ -6,6 +6,7 @@ import { extractLinksFromPages } from '../utils/linkParser'
 import ForceGraph2D from 'react-force-graph-2d'
 import { useRef, useEffect, useState, useMemo } from 'react'
 import { X } from 'lucide-react'
+import { useModalFocus } from './common/useModalFocus'
 import './GraphView.css'
 
 export default function GraphView({ onClose }) {
@@ -15,6 +16,7 @@ export default function GraphView({ onClose }) {
   const fgRef = useRef()
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const containerRef = useRef(null)
+  useModalFocus(containerRef, true, 'button')
 
   useEffect(() => {
     const handleResize = () => {
@@ -77,10 +79,12 @@ export default function GraphView({ onClose }) {
   }
 
   return (
-    <div className="graph-view-container" ref={containerRef}>
+    <div className="graph-view-container" ref={containerRef} role="dialog" aria-modal="true" aria-label="Graph View" tabIndex={-1} onKeyDown={event => {
+      if (event.key === 'Escape' && !event.nativeEvent.isComposing) { event.preventDefault(); onClose() }
+    }}>
       <div className="graph-header">
         <h2>Graph View</h2>
-        <button className="icon-btn" onClick={onClose}><X size={20}/></button>
+        <button className="icon-btn" onClick={onClose} aria-label="Close graph"><X size={20} aria-hidden="true" /></button>
       </div>
       <div className="graph-body">
         {(

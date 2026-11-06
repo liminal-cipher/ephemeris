@@ -13,7 +13,7 @@ export const useDialogStore = create((set, get) => ({
       try {
         const skipped = localStorage.getItem(showNeverAskKey) === 'true'
         if (skipped) {
-          onConfirm && onConfirm()
+          Promise.resolve().then(() => onConfirm?.()).catch(error => get().addToast(`Action failed: ${error.message}`, 'error'))
           return
         }
       } catch (err) {

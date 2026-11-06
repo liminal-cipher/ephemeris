@@ -551,7 +551,7 @@ export default function PageHeader({ activePageId, title, emoji, coverImage, tit
           value={title} 
           onChange={(e) => updatePage({ title: e.target.value })}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
               e.preventDefault()
               if (editor) {
                 editor.commands.focus()

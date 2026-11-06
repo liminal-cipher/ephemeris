@@ -4,8 +4,10 @@ import { db } from '../db/db';
 import { usePagesList } from '../store/workspace';
 import { useStore } from '../store/useStore';
 import { extractTextFromJson } from '../utils/linkParser';
-import { FileText, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import PageIcon from './common/PageIcon';
+import { useModalFocus } from './common/useModalFocus';
+import { useDialogStore } from '../store/dialogStore';
 import './CommandPalette.css';
 
 function HighlightText({ text, query }) {
@@ -43,6 +45,8 @@ export default function CommandPalette() {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef(null);
+  const modalRef = useRef(null);
+  useModalFocus(modalRef, isOpen);
   
   const setActivePageId = useStore((state) => state.setActivePageId);
   const pages = usePagesList();
@@ -102,6 +106,12 @@ export default function CommandPalette() {
   // Global shortcut (Ctrl+K / Cmd+K)
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (e.isComposing) return;
+      const activeModal = document.activeElement?.closest('[role="dialog"]');
+      if (useDialogStore.getState().confirmState || (activeModal && activeModal !== modalRef.current)) {
+        if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'k' || e.code === 'KeyK')) e.preventDefault();
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K' || e.code === 'KeyK')) {
         e.preventDefault();
         e.stopPropagation();
@@ -121,15 +131,12 @@ export default function CommandPalette() {
     if (isOpen) {
       setQuery('');
       setSelectedIndex(0);
-      const timer = setTimeout(() => {
-        inputRef.current?.focus();
-      }, 30);
-      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 
   // Handle keyboard navigation within the palette
   const handleKeyDown = (e) => {
+    if (e.nativeEvent.isComposing) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setSelectedIndex(prev => (prev < filteredResults.length - 1 ? prev + 1 : 0));
@@ -153,7 +160,7 @@ export default function CommandPalette() {
   if (!isOpen) return null;
 
   return (
-    <div className="command-palette-overlay" onClick={() => setIsOpen(false)} role="dialog" aria-modal="true" aria-label="Command Palette">
+    <div ref={modalRef} className="command-palette-overlay" onClick={() => setIsOpen(false)} role="dialog" aria-modal="true" aria-label="Command Palette" tabIndex={-1}>
       <div className="command-palette-modal" onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', padding: '0 16px', borderBottom: '1px solid var(--border-color)' }}>
           <Search size={18} style={{ color: 'var(--text-muted)', flexShrink: 0 }} aria-hidden="true" />

@@ -3,12 +3,17 @@ import { BubbleMenu } from '@tiptap/react/menus'
 import { Bold, Italic, Underline as UnderlineIcon, Strikethrough } from 'lucide-react'
 
 export default function EditorToolbar({ editor }) {
+  const format = command => {
+    if (!editor || editor.isDestroyed) return
+    editor.view.focus()
+    command(editor.chain()).run()
+  }
   if (!editor) return null;
 
   return (
     <BubbleMenu editor={editor} className="bubble-menu">
       <button
-        onClick={() => editor.chain().focus().toggleBold().run()}
+        onClick={() => format(chain => chain.toggleBold())}
         className={editor.isActive('bold') ? 'is-active' : ''}
         aria-label="Format Bold"
         aria-pressed={editor.isActive('bold')}
@@ -16,7 +21,7 @@ export default function EditorToolbar({ editor }) {
         <Bold size={16} aria-hidden="true" />
       </button>
       <button
-        onClick={() => editor.chain().focus().toggleItalic().run()}
+        onClick={() => format(chain => chain.toggleItalic())}
         className={editor.isActive('italic') ? 'is-active' : ''}
         aria-label="Format Italic"
         aria-pressed={editor.isActive('italic')}
@@ -24,7 +29,7 @@ export default function EditorToolbar({ editor }) {
         <Italic size={16} aria-hidden="true" />
       </button>
       <button
-        onClick={() => editor.chain().focus().toggleUnderline().run()}
+        onClick={() => format(chain => chain.toggleUnderline())}
         className={editor.isActive('underline') ? 'is-active' : ''}
         aria-label="Format Underline"
         aria-pressed={editor.isActive('underline')}
@@ -32,7 +37,7 @@ export default function EditorToolbar({ editor }) {
         <UnderlineIcon size={16} aria-hidden="true" />
       </button>
       <button
-        onClick={() => editor.chain().focus().toggleStrike().run()}
+        onClick={() => format(chain => chain.toggleStrike())}
         className={editor.isActive('strike') ? 'is-active' : ''}
         aria-label="Format Strikethrough"
         aria-pressed={editor.isActive('strike')}

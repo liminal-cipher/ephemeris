@@ -165,6 +165,7 @@ export default function Sidebar({ onOpenGraph, onToggleSidebar }) {
   // Delete individual page
   const handleDeletePage = (pageId, e) => {
     e?.stopPropagation()
+    e?.currentTarget.focus()
     const target = pages.find(p => p.id === pageId)
     const title = target?.title || 'Untitled'
 
@@ -188,8 +189,9 @@ export default function Sidebar({ onOpenGraph, onToggleSidebar }) {
   }
 
   // Delete multiple selected pages
-  const handleBulkDelete = () => {
+  const handleBulkDelete = event => {
     if (selectedPageIds.length === 0) return
+    event?.currentTarget?.focus?.()
     const count = selectedPageIds.length
     showConfirm({
       title: `Delete ${count} pages`,
@@ -212,6 +214,7 @@ export default function Sidebar({ onOpenGraph, onToggleSidebar }) {
   // Handle keyboard Delete / Backspace for bulk deletion
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (e.defaultPrevented || e.isComposing || e.target.closest?.('[role="dialog"]')) return
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
         return
       }
@@ -444,7 +447,7 @@ export default function Sidebar({ onOpenGraph, onToggleSidebar }) {
           <Plus size={16} />
           New Page
         </button>
-        <button className="new-page-btn" onClick={onOpenGraph} style={{ background: 'var(--bg-hover)', color: 'var(--text-primary)' }}>
+        <button className="new-page-btn" onClick={event => { event.currentTarget.focus(); onOpenGraph() }} style={{ background: 'var(--bg-hover)', color: 'var(--text-primary)' }}>
           <Network size={16} />
           Graph View
         </button>
