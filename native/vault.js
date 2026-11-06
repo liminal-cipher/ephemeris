@@ -196,7 +196,10 @@ export class NativeVault {
     const { limit, offset } = pageOptions(options)
     if (typeof query !== 'string' || !query.trim() || [...query].length > 200 || query.includes('\0')) throw new Error('Invalid search query')
     const value = query.trim().normalize('NFC').toLowerCase()
-    if (this.#db.prepare('SELECT n.id FROM notes n LEFT JOIN search_fts s ON s.note_id=n.id WHERE s.note_id IS NULL OR s.version != n.version LIMIT 1').get()) throw new Error('Search index is stale; rebuild required')
+    // FTS UNINDEXED columns cannot service an equality join. Materialise only
+    // IDs/versions once so SQLite can build an automatic join index, retaining
+    // the full stale/missing-row check without scanning FTS once per note.
+    if (this.#db.prepare('WITH indexed AS MATERIALIZED (SELECT note_id,version FROM search_fts) SELECT n.id FROM notes n LEFT JOIN indexed s ON s.note_id=n.id WHERE s.note_id IS NULL OR s.version != n.version LIMIT 1').get()) throw new Error('Search index is stale; rebuild required')
     const short = [...value].length < 3
     const clause = short ? 'instr(s.text, ?) > 0' : 'search_fts MATCH ?'
     const rows = this.#db.prepare(`SELECT n.id,n.metadata,n.version,s.coverage,s.reasons FROM search_fts s JOIN notes n ON n.id=s.note_id WHERE ${clause} AND n.deleted IS NULL AND n.recovery=0 ORDER BY n.id LIMIT ? OFFSET ?`)

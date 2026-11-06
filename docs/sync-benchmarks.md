@@ -1,5 +1,42 @@
 # Sync resource measurements
 
+## Native workspace queries and recovery: 7 November 2026
+
+Command: `node native/benchmark-workspace.js`. Windows x64, Node 24.20.0,
+Intel Core Ultra X7 358H, 3,000 synthetic notes with Korean/English text,
+256-level hierarchy, 20 samples per query, page sizes 20/50/30. Median below
+uses the upper middle sample; p95 uses the nineteenth ordered sample.
+Two handles alternate 100 sequential edits; this is not a concurrent load test.
+An 8 MiB random attachment is hashed before/after backup restoration, then a
+restored note is edited. Both checks passed and fixture directories were removed.
+
+| Query | Initial median ms | Final median ms | Final p95 ms |
+| --- | ---: | ---: | ---: |
+| List 20 notes | 0.05 | 0.09 | 0.16 |
+| Korean trigram search, 50 results | 4,010.67 | 30.12 | 37.83 |
+| One-character substring search | 3,771.09 | 24.53 | 33.62 |
+| Tag/status filtered view | 17.06 | 22.84 | 25.58 |
+| Recently changed view | 268.85 | 21.87 | 28.21 |
+
+The first run partly overlapped browser tests; the final run had no competing
+task test process. These are observations, not a controlled speedup ratio.
+SQLite query plans showed a repeated FTS virtual-table scan in the search-index
+freshness audit. Materialising just note ID/version once allows indexed joining
+while retaining the full stale/missing-row check. Recent ordering now groups
+change sequences once instead of scanning the journal separately per note.
+Regression tests corrupt an index row outside the requested page and require
+search to continue failing closed.
+
+Final creation: 8,823.86 ms; 100 edits: 683.33 ms; attachment insertion:
+141.06 ms; backup: 11,715.55 ms; restore: 22,587.51 ms. Peak process RSS:
+169,708 KiB (approximately 166 MiB). Backup/restore verification remains a
+noticeable cost. These measurements cover the storage/query layer, not browser
+startup time, virtualised sidebar rendering, physical power loss or a long-lived
+offline deployment. Heavy conflict, interruption and independent-client cases
+are separately exercised by the native regression suite. No causal history was
+compacted to obtain these results. Earlier sync measurements below remain
+historical and were not remeasured by this workspace benchmark.
+
 ## Schema 4 and real HTTP: 6 November 2026
 
 Windows, Node 24.20.0, synthetic data in automatically removed temporary

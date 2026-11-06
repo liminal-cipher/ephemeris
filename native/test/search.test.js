@@ -93,3 +93,17 @@ test('a search write failure rolls back the note and journal', t => {
   vault.rebuildSearch()
   assert.equal(vault.search('preserved').length, 1)
 })
+
+test('the optimised search audit still rejects stale rows outside the requested result page', t => {
+  const { vault, directory } = setup(t)
+  for (let index = 0; index < 150; index++) vault.create({ id: 'note-' + index, document: bytes('matching text') })
+  const db = new DatabaseSync(path.join(directory, 'vault.sqlite'))
+  try {
+    db.prepare('UPDATE search_fts SET version=0 WHERE note_id=?').run('note-99')
+    assert.throws(() => vault.search('matching', { limit: 1 }), /stale/)
+    db.prepare('DELETE FROM search_fts WHERE note_id=?').run('note-99')
+    assert.throws(() => vault.search('matching', { limit: 1 }), /stale/)
+  } finally { db.close() }
+  vault.rebuildSearch()
+  assert.equal(vault.search('matching', { limit: 1 }).length, 1)
+})
