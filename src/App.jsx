@@ -14,11 +14,10 @@ function App() {
   const ready = useWorkspaceStore(state => state.isSynced)
   const error = useWorkspaceStore(state => state.error)
 
-  if (error) return <div role="alert">Local storage is unavailable: {error}. Existing databases have been retained. Do not clear browser storage.</div>
-  if (!ready) return <div role="status">Opening local workspace…</div>
-
   return (
     <div className="app-container">
+      <div className="browser-workspace" inert={nativeOpen || undefined}>
+      {error ? <div role="alert">Local storage is unavailable: {error}. Existing databases have been retained. Do not clear browser storage.</div> : !ready ? <div role="status">Opening local workspace…</div> : <>
       {sidebarOpen && (
         <Sidebar 
           onOpenGraph={() => setIsGraphViewOpen(true)} 
@@ -29,9 +28,11 @@ function App() {
         <PageEditor onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} sidebarOpen={sidebarOpen} />
       </div>
       {isGraphViewOpen && <GraphView onClose={() => setIsGraphViewOpen(false)} />}
-      <CommandPalette />
+      {!nativeOpen && <CommandPalette />}
       <GlobalDialogHost />
+      </>}
       <button className="native-open" onClick={() => setNativeOpen(true)}>Native workspace</button>
+      </div>
       {nativeOpen && <NativeWorkspace onClose={() => setNativeOpen(false)} />}
     </div>
   )
