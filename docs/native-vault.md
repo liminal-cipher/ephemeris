@@ -464,16 +464,16 @@ npm run test:e2e
 git diff --check
 ```
 
-GitHub Actions is configured for Node 24 on Ubuntu, Windows and macOS, with
-Chromium, Firefox and WebKit. This local expansion has not run remotely.
-Run `42231015207` at the earlier `03c8e5b` passed Ubuntu/Windows but failed
-19 native tests on macOS. The fixture correction is described in the current
-handoff; Windows regression success is not a macOS acceptance result.
+GitHub Actions [run 42260268543](https://github.com/liminal-cipher/ephemeris/actions/runs/42260268543)
+passed at `d8f1fed` on macOS, Windows and Ubuntu with Node 24. Each runner passed
+65 unit, 132 native and 31 browser tests, including Chromium, Firefox and WebKit.
+The earlier run `42231015207` at `03c8e5b` had failed 19 native tests on macOS;
+the trusted fixture correction has now passed on an actual macOS runner.
 Native tests use temporary directories and synthetic data, including a
 real BrowserVault export, independent writer processes, forced journal errors,
 an interrupted real importer, corruption and symlink rejection. Local results
-are recorded in the Phase B section of `ephemeris-2-handoff.md`. Remote CI and
-human acceptance are separate from those results.
+are recorded in the 7 November expansion section of `ephemeris-2-handoff.md`.
+Automated local and runner results do not establish human acceptance.
 
 Known limits: no E2EE, multi-user identity/roles, deployed production service,
 sync history compaction, native-to-browser backup conversion or complete
@@ -486,8 +486,8 @@ access. Windows permissions inherit the parent ACL. Never use network filesystem
 or concurrently synchronised folders. The current audit reports no advisories;
 this does not eliminate same-origin script execution or compromised-account risks.
 
-Physical power loss, hardware failure, real volume exhaustion, execution of these
-new changes on Linux/macOS and human acceptance remain unverified locally.
+Physical power loss, hardware failure, real volume exhaustion, shipping Safari,
+physical OS IME behaviour and human acceptance remain unverified.
 Windows synthetic measurements cover 3,000 notes, a 256-level hierarchy and an
 8 MiB attachment with backup/restore/subsequent editing. Files are synchronised before snapshot
 publication; POSIX directory entries are also synchronised. Node's Windows API
@@ -504,8 +504,8 @@ searches scan the projection; measured costs and limits are in `sync-benchmarks.
 
 ## Remaining daily-driver work
 
-1. Run the changed source on an actual macOS runner and Linux; test shipping Safari,
-   real Windows/macOS IMEs, power/volume failures and human acceptance.
+1. Test shipping Safari, real Windows/macOS IMEs, power/volume failures and human
+   acceptance separately from the passing macOS/Windows/Ubuntu CI matrix.
 2. Complete Markdown/YAML/Obsidian/Joplin import/export with source retention and
    corpus round trips. Rich structures unsupported by this editor remain blocked.
 3. Add full sync/history/backup wizards, native backlink navigation and reference

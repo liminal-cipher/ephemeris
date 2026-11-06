@@ -59,7 +59,7 @@ Each workspace has one canonical store: BrowserVault in IndexedDB, or NativeVaul
 
 ## Results & Limitations
 
-- **Development acceptance.** Native editing and three browser engines are tested on Windows. The macOS temporary-directory failure has a targeted fixture correction; this revision still needs actual macOS/Linux CI. WebKit testing is not shipping Safari acceptance.
+- **Development acceptance.** [CI for `d8f1fed`](https://github.com/liminal-cipher/ephemeris/actions/runs/42260268543) passed on macOS, Windows and Ubuntu, including all three browser engines and the macOS temporary-directory regression. Shipping Safari, physical OS IME behaviour and human acceptance remain separate checks.
 - **Recovery and capacity.** Browser storage can be evicted. Keep verified native snapshots; sync history is deliberately retained and has resource limits. [Synthetic measurements](docs/sync-benchmarks.md) cover 3,000 native notes, not all browser-sidebar workloads.
 - **Replacement gaps.** Markdown/Obsidian/Joplin migration, a complete sync/history UI, native installers and signing remain unfinished. This is not yet a validated Obsidian/Joplin replacement.
 

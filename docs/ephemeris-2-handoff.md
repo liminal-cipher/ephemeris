@@ -1,5 +1,89 @@
 # Ephemeris 2: implementation and verification handoff
 
+## UI reliability audit: 7 November 2026
+
+The UI audit started at fetched `main`/`origin/main` `d8f1fed`, preserving the
+four existing documentation edits. The changes were local at audit completion.
+The user subsequently authorised semantic commits and pushes, followed by a
+file-naming and structure review. Deployment remains outside the task's scope.
+
+Implemented corrections:
+
+- `src/components/NativeWorkspace.jsx` now serialises UI operations with a
+  synchronous guard, disables closing/disconnecting during an operation, avoids
+  nested operation handlers for attachment uploads, resets the parent field for
+  new/recovered notes, clears an invalid replacement session and respects update
+  permission when opening an editor. Errors scroll into view without taking
+  focus from the user's control. `NativeNoteEditor.jsx` also locks editing during
+  initialisation and structural changes, while ordinary autosaving remains editable.
+- `NativeNoteEditor.jsx` and `editor/EditorToolbar.jsx` restore editor focus
+  synchronously for formatting/undo. The previous deferred focus could take it
+  back from a newly focused property input: a real failing test inserted `project`
+  into the body instead of the move field. Regression checks retain both selected
+  text formatting and focus after two animation frames.
+- `NativeViews.jsx` renders custom statuses such as `__proto__`, `constructor`
+  and `toString` as text, rather than inherited object properties. Queries no
+  longer replace filter inputs, including when the initial effect runs late.
+  Selecting a saved definition remains an explicit filter change.
+- `common/useModalFocus.js`, `common/GlobalDialogHost.jsx`, `CommandPalette.jsx`
+  and `GraphView.jsx` provide named dialogs, inert backgrounds, keyboard focus
+  containment and return focus. Destructive confirmation starts on Cancel,
+  waits for asynchronous work and reports rejection with retry. Skipped-dialog
+  rejection is handled in `src/store/dialogStore.js`.
+- `src/App.jsx`, `PageEditor.jsx` and `Sidebar.jsx` explicitly focus modal
+  launchers across engines. Sidebar Delete/Escape handlers ignore modal and
+  composition events; a Native key cannot trigger deletion behind the modal.
+  `editor/PageHeader.jsx` retains title focus during IME confirmation; stale
+  title autofocus timers are cancelled in `PageEditor.jsx`.
+- `src/sync/collaboration.js` catches a failed optional module import as well as
+  constructor failure. A blocked transport chunk no longer prevents local
+  editing, saving or reloading. `src/storage/nativeConnection.js` distinguishes
+  invalid input, missing notes/parents and size errors without exposing response
+  bodies or credentials.
+
+New verification is in `e2e/ui-resilience.spec.js`,
+`src/components/common/GlobalDialogHost.test.jsx` and the expanded
+`src/components/NativeViews.test.jsx` and `e2e/native-edit.spec.js`. Synthetic
+real Companion replies are delayed to test operation ownership; isolated browser
+storage and optional module loading failures are injected explicitly. No private
+Vault, actual browser profile or external signalling service is used.
+
+The bundled Firefox reported a page crash when `locator.dispatchEvent` sent a
+synthetic composition key to the React dialog. The same native `KeyboardEvent`
+constructed in the page realm succeeds, and the tests use that method on all
+engines. This is synthetic composition coverage, not physical Korean IME acceptance.
+
+Verification on Windows x64 / Node 24.20.0:
+
+| Command | Observed result |
+| --- | --- |
+| `npm test` | PASS: 69 tests in 14 files |
+| `npm run test:native` | PASS: 132 tests |
+| `npm run test:e2e -- --reporter=line` | PASS: 49 tests, Chromium 17 / Firefox 16 / WebKit 16 |
+| `npm run build` | PASS: 65 offline assets; existing large-chunk warning remains |
+| `npx playwright test e2e/ui-resilience.spec.js --output=test-results/ui-final --reporter=line` | PASS: 18 tests after the final error-visibility adjustment |
+| `npm run lint` and `git diff --check` | Exit 0; existing browser hook/style warnings remain. Focused native/modal-focus/connection/collaboration lint is clean |
+
+Actual screenshots under `test-results/` cover desktop, 420px width, dark mode,
+conflicts, boards and forced-process recovery. `test-results/ui-final/` retains
+the final confirmation, rejected-move and storage-failure screenshots. Desktop,
+narrow/dark, conflict, board, confirmation and failure images were opened and
+inspected; the offscreen error found during that review was corrected and tested
+with a viewport assertion. Test-created fixtures were torn down. One fixture left
+by an earlier failed test was verified as synthetic, then recycled; its absence
+was checked. No task-owned preview server remains.
+
+These follow-up edits have **not** run on macOS or Linux. The successful three-OS
+CI linked below covers published `d8f1fed`, not this uncommitted diff. No new
+performance benchmark or dependency change was part of this UI audit.
+
+Remaining inspection gaps include physical OS IME, shipping Safari, screen-reader
+acceptance and real disk/power failure. Existing `PageHeader.jsx` and `PageIcon.jsx`
+still render remote cover/icon URLs directly, including URLs from imported metadata;
+those paths need a separate explicit network-permission control. This audit read
+those paths but did not contact external image services. Fresh-workspace no-network
+tests do not establish privacy for a workspace containing remote images.
+
 ## Autonomous expansion: 7 November 2026
 
 This section supersedes current-state claims in the historical sections below.
@@ -10,8 +94,11 @@ actual user Vault, private browser profile or real credentials were used.
 Previous commits `7e7b0a1`, `d92b76e` and `03c8e5b` had separate publication
 approval. After local verification, the user separately authorised semantic
 commits and a push of this expansion to `main`. Deployment, releases and signing
-remain outside scope. The verification table below records pre-publication local
-results; subsequent runner results are available from the published commit's CI.
+remain outside scope. The 43-file expansion was published as nine commits ending
+at `d8f1fed`. [CI run 42260268543](https://github.com/liminal-cipher/ephemeris/actions/runs/42260268543)
+completed successfully on macOS, Windows and Ubuntu. Each runner's logs confirm
+65 unit, 132 native and 31 browser tests passed. Local timings and screenshots
+below remain separate from runner evidence and human acceptance.
 
 ### Implemented and usable
 
@@ -57,9 +144,9 @@ traversal tests pass, including an actual child test process (with inherited
 `NODE_TEST_CONTEXT` removed so it does not silently skip the fixture).
 Other native temporary-root fixtures and path/filename assumptions were inspected;
 attachments use validated IDs rather than user-supplied filesystem paths.
-At local verification, the changed code had not run on macOS or Linux. The
-expanded CI matrix runs after publication; Windows results alone do not establish
-that the macOS runner failure is fixed.
+The subsequent published run at `d8f1fed` passed all 132 native tests on an actual
+macOS runner, as well as Windows and Ubuntu. This runner evidence confirms that
+the original temporary-directory failure no longer occurs in the test suite.
 
 The initial current audit reported 31 moderate and one low advisory. All Tiptap
 packages moved to 3.33.0, collaboration-caret replaced collaboration-cursor, maths
@@ -82,7 +169,8 @@ arbitrary plugin execution or unexpected external request was introduced.
 
 ### Verification
 
-Windows x64 / Node 24.20.0, disposable synthetic data only:
+Local results use Windows x64 / Node 24.20.0 and disposable synthetic data only.
+The separately labelled CI row records the published cross-platform run:
 
 | Command / acceptance | Result |
 | --- | --- |
@@ -94,7 +182,7 @@ Windows x64 / Node 24.20.0, disposable synthetic data only:
 | `npm audit --json` | Zero reported advisories |
 | Focused `npx oxlint` and `git diff --check` | Passed without output |
 | `node native/benchmark-workspace.js` | Completed; exact attachment and restored editing verified; peak RSS 169,708 KiB |
-| Actual macOS / Linux execution of this revision | NOT RUN; prior baseline CI is not evidence for these changes |
+| Published CI at `d8f1fed`, run `42260268543` | macOS, Windows and Ubuntu PASS; each passed 65 unit, 132 native and 31 browser tests, plus lint, HTTP resource measurement and build |
 | Shipping Safari, physical OS Korean IME, physical power loss, human acceptance | NOT RUN |
 
 Playwright runs the real built application with isolated contexts, local TCP
@@ -172,9 +260,9 @@ offline stress acceptance and lower backup/restore latency remain practical gaps
 
 Electron, Tauri with Node sidecar and browser-plus-Companion trade-offs are in the
 [desktop comparison](native-vault.md#desktop-distribution-decision). No runtime
-bundle, installer, updater, signing, notarisation or release was added. Actual
-macOS/Linux CI and hands-on Windows/macOS acceptance remain gates before everyday
-private-data use. The historical Phase C and overall Ephemeris 2.0 are not marked
+bundle, installer, updater, signing, notarisation or release was added. Hands-on
+Windows/macOS acceptance, physical OS IMEs and shipping Safari remain gates before
+everyday private-data use. The historical Phase C and overall Ephemeris 2.0 are not marked
 complete by this work.
 
 ## Chunked payloads and durable provider: 6 November 2026
