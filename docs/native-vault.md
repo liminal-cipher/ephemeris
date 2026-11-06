@@ -1,11 +1,11 @@
 # Native Vault milestone
 
-Current follow-up work starts from `main` at `cb39da5`, 6 November 2026.
-Native snapshots, indexed search, the opt-in read-only browser companion,
-chunked attachment sync, a local authenticated HTTP provider and explicit conflict recovery are implemented. BrowserVault
-remains the browser editor's canonical store.
-There is no production Sync Engine or MCP server. Overall Phase B is not declared
-complete pending platform verification and the remaining acceptance work below.
+The local expansion starts from `main` at `03c8e5b`, 7 November 2026.
+Native snapshots, indexed search, explicitly scoped browser editing, structured
+views, read-only stdio MCP, chunked sync, the authenticated HTTP provider and
+explicit sync conflict recovery are implemented. BrowserVault remains an
+independent browser workspace. No automatic migration occurs. Phase C, desktop
+delivery and overall Ephemeris 2 are not declared complete.
 
 ## Runtime and architecture
 
@@ -107,7 +107,7 @@ trusted local invocation; operation checksums are not authentication. A remote
 provider must promise durable acceptance and enforce immutable IDs. The simulator
 tests the contract but does not provide real cross-device durability.
 
-Native snapshot format 1 accepts schemas 1, 2 and 3 and preserves sync state. Restore
+Native snapshot format 1 accepts schemas 1–4 and preserves sync state. Restore
 into a new directory and verify before use. If the original remains active, call
 `forkSyncClient()` on the restored copy before any new edits. The fork retains old
 operation IDs and pending deliveries; it changes only the author of future edits.
@@ -169,7 +169,8 @@ operations and 64 MiB of retained operation JSON per note. Hitting a budget fail
 the whole mutation; it does not delete history. Full snapshots make large
 attachments expensive and can block subsequent edits. Read the actual
 [benchmarks and remaining limits](sync-benchmarks.md) before capacity planning.
-No write operation is exposed through the Companion.
+Sync configuration and causal conflict resolution are not exposed through the
+Companion. Its separate editing permission grants only note/attachment operations.
 
 ## API
 
@@ -227,6 +228,7 @@ finally { reopened.close() }
 | `rebuildSearch()` / `verifySearch()` | Transactionally rebuild / check the disposable index without changing notes or journal. |
 | `preview(id)` | Supported plain text plus explicit coverage and reasons. |
 | `listPage(options)` / `recentChanges({limit?})` | Bounded live-note metadata / newest-first journal records. |
+| `queryNotes(options)` | Bounded metadata views; tag, project, status and favourite filters; title, recent-change or due-date ordering. Saved definitions are ordinary Vault metadata. |
 | `convertLegacy(id, expected)` | Explicit, version-checked conversion of a proven plain paragraph/text subset. |
 | `close()` | Idempotently closes the connection; refuses while its backup is active. |
 
@@ -271,8 +273,12 @@ reported rather than replaced with an empty projection.
    On POSIX use an absolute path such as `/home/me/LocalVaults/imported-copy`.
    To create an empty Vault, use `node native/cli.js create <absolute-directory>`.
    The CLI prints counts/checksums, not document contents, and closes the Vault.
-3. Inspect notes through the API before considering a future editor integration.
-   Keep using the original browser application for editing in this milestone.
+3. Inspect the separate native copy through Native workspace, export a native
+   backup, restore it into another new directory, and verify subsequent editing
+   there before choosing the imported Vault for daily use. Unsupported documents
+   remain readable as projections/downloads and cannot be forced into the editor.
+   Keep the original browser profile and backup; the application never switches
+   or migrates that workspace automatically.
 
 Import validates the format, checksum, IDs, Yjs completeness, metadata, hierarchy
 and required page/recovery-document entries before writing. The shared backup
@@ -317,7 +323,7 @@ version, overlays and tombstones. Test older builds in a separate profile.
 ## Native snapshots and isolated restoration
 
 Native backups use a directory containing `manifest.json` and `snapshot.sqlite`.
-Manifest format `ephemeris-native-snapshot`, version 1, supports native schemas 1 and 2.
+Manifest format `ephemeris-native-snapshot`, version 1, supports native schemas 1–4.
 This is **not** a browser v2 backup and cannot be imported into the browser.
 Keep both files together. No tar/zip extraction or manifest-controlled paths run.
 
@@ -430,11 +436,11 @@ The listener binds only `127.0.0.1` at an OS-selected port. Every data request m
 have the exact Host (including port), configured Origin and bearer token. Missing,
 null and foreign origins fail; public application origins cannot be configured.
 CORS is narrowly allowed only after Host/Origin checks and is not authentication.
-Only GET operations are dispatched; writes, unknown/duplicate query parameters,
+The default session dispatches only GET operations. Writes, unknown/duplicate query parameters,
 filesystem paths and SQL are rejected. A valid preflight can omit authentication,
 but never returns Vault data. Response caching is disabled; cookies are omitted.
 
-The Worker owns one `NativeVault.open(..., {readOnly: true})` handle, validates it
+The default Worker owns one `NativeVault.open(..., {readOnly: true})` handle, validates it
 on startup, and uses only its API. It performs SQLite, extraction and JSON encoding
 away from the HTTP event loop. A worker timeout/failure makes further data calls
 fail closed until restart. Attachments download as octet streams; native HTML,
@@ -453,33 +459,37 @@ npm run lint
 npm test
 npm run test:native
 npm run build
-npx playwright install chromium
+npx playwright install chromium firefox webkit
 npm run test:e2e
 git diff --check
 ```
 
-GitHub Actions is configured to run the complete native/browser pipeline on
-Node 24, on both Ubuntu and Windows. This local change has not run remotely. Native tests use temporary directories and synthetic data, including a
+GitHub Actions is configured for Node 24 on Ubuntu, Windows and macOS, with
+Chromium, Firefox and WebKit. This local expansion has not run remotely.
+Run `42231015207` at the earlier `03c8e5b` passed Ubuntu/Windows but failed
+19 native tests on macOS. The fixture correction is described in the current
+handoff; Windows regression success is not a macOS acceptance result.
+Native tests use temporary directories and synthetic data, including a
 real BrowserVault export, independent writer processes, forced journal errors,
 an interrupted real importer, corruption and symlink rejection. Local results
 are recorded in the Phase B section of `ephemeris-2-handoff.md`. Remote CI and
 human acceptance are separate from those results.
 
-Known limits: no E2EE, multi-user identity/roles, native browser writes,
-production transport, sync history compaction, native-to-browser backup conversion or full
-revision-history recovery. Session tokens authenticate local read access; they
+Known limits: no E2EE, multi-user identity/roles, deployed production service,
+sync history compaction, native-to-browser backup conversion or complete
+revision-history/recovery UI. Session tokens authenticate local scoped access; they
 are not user accounts or encryption. Hashes detect accidental damage, not
 malicious rewriting. Schema and BLOB checks are not a complete hostile-database
 sandbox. Vault/backup/session directories must be trusted and private;
 symlink/hardlink checks do not defeat a privileged local attacker racing file
 access. Windows permissions inherit the parent ACL. Never use network filesystems
-or concurrently synchronised folders. Existing browser dependency advisories
-remain relevant, particularly same-origin script execution risks.
+or concurrently synchronised folders. The current audit reports no advisories;
+this does not eliminate same-origin script execution or compromised-account risks.
 
-Physical power loss, hardware failure, actual disk-full I/O, Linux/macOS execution,
-large-Vault performance and human acceptance remain unverified locally. Linux CI
-is pending: no local WSL distribution or Docker runtime was available, and the
-Phase C-1 remote CI results have not been observed. Files are synchronised before snapshot
+Physical power loss, hardware failure, real volume exhaustion, execution of these
+new changes on Linux/macOS and human acceptance remain unverified locally.
+Windows synthetic measurements cover 3,000 notes, a 256-level hierarchy and an
+8 MiB attachment with backup/restore/subsequent editing. Files are synchronised before snapshot
 publication; POSIX directory entries are also synchronised. Node's Windows API
 does not provide the corresponding directory fsync guarantee. Do not equate
 process-interruption tests with proof of power-loss durability.
@@ -490,23 +500,18 @@ limit. The worker bounds request concurrency to four, uses a ten-second request
 timeout and rejects JSON responses over 16 MiB. These controls do not establish a
 strict memory budget: large metadata/documents are decoded before response-size
 checking. Use the local backup API/CLI for large recovery operations. Short-query
-searches scan the projection; large-Vault search performance is not benchmarked.
+searches scan the projection; measured costs and limits are in `sync-benchmarks.md`.
 
-## Next steps toward Phase C-2
+## Remaining daily-driver work
 
-1. Finish Phase B acceptance: execute the Ubuntu/Windows CI matrix after an
-   authorised publication; test macOS, actual disk-full failures, large Vaults and
-   recovery on representative data copies. Extend codecs only with round-trip
-   evidence. Native-to-browser export and native editor writes remain separate
-   future contracts, not capabilities of this read-only milestone.
-2. Add explicit conflict resolution and structural hierarchy recovery. Missing
-   dependencies wait durably; cyclic cross-note moves and deleted-parent references
-   currently stop application safely and need recovery outside automatic sync.
-3. Benchmark retained-history reconciliation and embedded attachment costs; define
-   chunking, bounded memory, history compaction and durable provider storage.
-4. Specify authenticated provider behaviour, epoch recovery and transport-level
-   fault contracts. Only then implement a separately authorised real transport.
-   MCP and E2EE remain later work; simulator results are not network reliability.
+1. Run the changed source on an actual macOS runner and Linux; test shipping Safari,
+   real Windows/macOS IMEs, power/volume failures and human acceptance.
+2. Complete Markdown/YAML/Obsidian/Joplin import/export with source retention and
+   corpus round trips. Rich structures unsupported by this editor remain blocked.
+3. Add full sync/history/backup wizards, native backlink navigation and reference
+   editing, tabs/split panes, a source-linked agenda and session renewal UX.
+4. Validate signed desktop packaging, long offline periods and larger retained
+   histories. Do not infer safe compaction from provider receipts.
 ## Schema 4 and the HTTP provider
 
 The optional `enablePayloads()` upgrade follows `enableSync()` and
@@ -520,3 +525,123 @@ must understand schema 4/protocol 3 before using it.
 surviving operations for one provider; it never deletes local notes or history.
 The authenticated server/client CLIs, configuration, recovery procedure and
 current limitations are described in [the provider guide](sync-provider.md).
+
+## Explicit native editing and recovery
+
+Use the same local preview origin as above. Start a **separate** editing session:
+
+```text
+node native/serve.js C:/LocalVaults/work http://127.0.0.1:4179 C:/PrivateSessions/edit-session.json --edit
+```
+
+On macOS use real absolute paths beneath your home directory. Session parents
+must exist and the session file must be new. Production Vault paths still reject
+symlink traversal; the macOS test fixture correction does not relax that rule.
+
+Load the new file in Native workspace and choose **Connect for editing**. Its
+version 2 session lasts at most 15 minutes and grants only `notes:create`,
+`notes:update`, `notes:delete`, `notes:restore` and `attachments:create` on the
+one selected Vault. Programmatic callers can grant a subset. Existing version 1
+tokens remain read-only. Starting a new session rotates credentials; reconnect
+with its new file. There is currently no in-app token renewal.
+
+POST requests require the exact Origin/Host, bearer authentication and
+`application/json`, and are capped at 8 MiB. Authentication expiry is rechecked
+after reading the body. Existing-note writes require both version and content
+hash. The Worker independently checks operation permission. No API accepts a
+filesystem path, SQL, sync configuration or arbitrary method name.
+
+Create or open a note, select **Edit native note**, change its title/body and wait
+for **Saved to Native Vault**. Ctrl/⌘+S saves and Ctrl/⌘+Z undoes within the active
+editor. Ctrl/⌘+K focuses native search. Move uses another note's stable ID; an empty
+parent moves to the root. Trash preserves content and attachments; restore
+explicitly returns the note to the root. Browser uploads are capped at 4 MiB;
+downloads use a neutral `.bin` name and never execute attachment content.
+
+The editor binds directly to a Y.Doc loaded from SQLite, retaining native roots,
+IDs, marks and supported maths. It refuses unknown structures/attributes and
+legacy-only/plain `body` documents rather than normalising them through Tiptap.
+Their original Yjs and recovery JSON remain downloadable. The browser editor and
+its original IndexedDB data are independent and remain available even if the
+native Companion stops. Native workspace can also open when BrowserVault fails.
+
+Pending writes are stored in a bounded IndexedDB recovery journal without any
+credentials. Writes use strict durability and wait for transaction completion
+before claiming retention or sending to the Companion. The UI distinguishes
+securing a draft from a retained draft. A localStorage implementation failed an
+actual Chromium process-kill test and was replaced; the strict journal passed
+kill/relaunch/recover/save using the same isolated synthetic browser profile.
+Each editor/tab has its own draft key; the namespace identifies the
+physical Vault file, not a portable sync identity. A restored/replaced database
+does not automatically receive another file's drafts. Native document admission
+is limited to 1 MiB of Base64, with a 2 MiB JSON draft limit including an in-flight
+snapshot. These conservative UI limits are below the native storage limits.
+
+If the Companion stops, keep the browser data and reconnect with a new session
+for the same Vault. **Retained drafts** can reopen or download pending content.
+A lost acknowledgement is accepted only when the observed next version and exact
+submitted document/metadata match; otherwise the draft enters conflict. Compare
+the saved version or save the draft's text/properties as a separate note. Original
+notes and retained drafts remain intact. Attachments stay on the original note;
+this action is not a complete attachment-bearing Vault clone. Storage failures
+stop editing and require a draft download before leaving. Browser eviction,
+physical power loss and every possible crash timing are not guaranteed by these
+tests; keep verified native snapshots.
+
+Quick Capture creates an Inbox-tagged note. Daily Note reopens the same local
+calendar day's stable ID; a deleted daily note requires explicit restoration.
+The meeting template includes dated headings and next actions. Properties cover
+tags, project, status, due date and favourite; unknown unchanged metadata survives.
+Views filter these canonical properties and offer table, cards and Kanban layouts,
+title/recent/due ordering, and saved definitions. Definitions are ordinary Vault
+metadata, not copied editable notes. Boards group only the current 30-note page;
+the total, paging controls and empty state are explicit. Layout/filter preferences
+are local, while saved definitions travel with the native Vault.
+
+## Read-only local MCP
+
+```text
+node native/mcp.js --vault C:/LocalVaults/review-copy --tools list_notes,search_notes,read_note,note_metadata,note_links,recent_changes,project_tasks
+```
+
+Use an absolute script path when a consuming MCP application's working directory
+differs from this repository. Omitting `--tools` exposes the seven read-only
+tools; provide a smaller comma-separated list to narrow access. There are no write
+tools, arbitrary filesystem/SQL access, HTTP listener or implicit cloud requests.
+The selected Vault opens read-only and must already have a valid searchable index.
+
+The server implements the [MCP 2025-11-25 stdio transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports),
+initialise/initialised lifecycle, ping, tools/list and tools/call. JSON messages are
+newline-delimited UTF-8. Input messages are capped at 64 KiB and tool-result data at
+24 KiB; output never contains non-protocol stdout logs. Tool pages admit at most
+50 notes; read sections at most 8,192 Unicode characters. Follow `nextOffset` and
+inspect coverage. Backlinks scan a bounded page of source notes. Tasks are read-only
+checkbox projections with source-note IDs and projection line numbers, not another
+editable task database. Oversized metadata requires selected fields/smaller pages.
+
+**Local execution does not mean model-provider privacy.** The server sends no
+network requests, but the consuming application may forward tool responses to
+an external model. Review its permissions and provider settings before granting
+access to private notes. Note content is untrusted data, not tool instructions.
+Real subprocess tests exercise protocol negotiation, permissions, pagination,
+Korean text, links/tasks, invalid paths/SQL fields and output bounds.
+
+## Desktop distribution decision
+
+The currently validated development workflow remains browser plus local Node
+Companion. No desktop runtime dependency, installer, signing or release was added.
+
+| Option | Runtime and boundary | Delivery and maintenance |
+| --- | --- | --- |
+| Browser + Companion | Uses the tested Node 24 SQLite process and browser sandbox; scoped loopback API | Small project payload, existing browser/runtime required. Browser file inputs work; Vault selection/startup still require the local CLI. No bundled updater |
+| Electron | Bundles Chromium/Node; its actual bundled Node/SQLite version needs acceptance testing. Renderer must have Node integration disabled, context isolation and a narrow IPC bridge | Native dialogs available; larger runtime bundle and regular Chromium/Electron security updates. Windows/macOS installers, signing and update infrastructure still needed |
+| Tauri + Node sidecar | OS webview plus separately packaged Node 24 executable; explicit sidecar capabilities and lifecycle required | Smaller webview shell, but Node must still be shipped per OS/architecture. Rust/webview/sidecar updates and Windows/macOS packaging add maintenance; native dialogs available |
+
+This is a risk comparison, not an installer-size measurement or proof of bundled
+SQLite compatibility. Electron's [security guidance](https://www.electronjs.org/docs/latest/tutorial/security)
+requires careful renderer isolation and dependency updates. Tauri documents
+[per-target sidecar binaries and scoped execution](https://v2.tauri.app/develop/sidecar/).
+A launcher prototype should follow actual macOS acceptance and a tested runtime
+bundle. Playwright WebKit on Windows is browser-engine coverage, not shipping
+Safari validation. No unsigned prototype is described as notarised or ready for
+frictionless public distribution.

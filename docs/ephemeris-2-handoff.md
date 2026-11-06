@@ -1,5 +1,182 @@
 # Ephemeris 2: implementation and verification handoff
 
+## Autonomous expansion: 7 November 2026
+
+This section supersedes current-state claims in the historical sections below.
+The starting worktree was clean `main`, equal to fetched `origin/main` at
+`03c8e5bfc0b5a6d4d0aecd901e38882183e39841`, with one worktree. Published shared
+engineering instructions and available skills were inspected. No other worktree,
+actual user Vault, private browser profile or real credentials were used.
+Previous commits `7e7b0a1`, `d92b76e` and `03c8e5b` had separate publication
+approval. After local verification, the user separately authorised semantic
+commits and a push of this expansion to `main`. Deployment, releases and signing
+remain outside scope. The verification table below records pre-publication local
+results; subsequent runner results are available from the published commit's CI.
+
+### Implemented and usable
+
+- Explicit native editing with a separate, at-most-15-minute scoped Companion
+  session: create/open/title/body/move/trash/restore/attachments. SQLite Yjs stays
+  canonical, BrowserVault stays independent, unsupported structures remain intact
+  and are refused by the rich-text editor. Optimistic version/hash checks reject
+  stale writes. Selection and undo/redo survive saves within the active editor.
+- Strict IndexedDB pending-write journal, per-tab recovery, lost-acknowledgement
+  checking, reload/reconnect recovery, conflict comparison and a separate recovered
+  text/properties copy. Attachments remain on the original. Actual Chromium process
+  termination exposed localStorage write loss; replacing it with strict transactions
+  passed kill/relaunch/recover/save. Storage failure stops edits and requires export
+  before leaving. This is not proof against physical power loss or browser eviction.
+- Quick Capture/Inbox, local-date Daily Notes with stable IDs, dated meeting
+  templates, typed tags/status/project/due date/favourite properties. Table, card
+  and Kanban views filter/sort the same notes; saved definitions are Vault metadata.
+  Boards explicitly group only their current page. Local layout/filter preferences
+  survive panel reopening. Native Ctrl/⌘+K no longer opens the browser palette;
+  focus stays in the native modal. Keyboard save, undo/redo and Escape are supported.
+- Seven read-only local MCP tools with explicit Vault/tool permissions, bounded
+  requests/results and pagination. Real stdio subprocess tests cover negotiation,
+  Korean text, links/tasks, metadata limits and rejection of arbitrary file/SQL
+  requests. No cloud calls or write tools were added. Consuming agents can still
+  forward tool results to an external model and must obtain the user's consent.
+- Measured native query improvements over 3,000 synthetic notes and a 256-level
+  hierarchy. Search median changed from 4,010.67 ms to 30.12 ms; recent-view median
+  from 268.85 ms to 21.87 ms. Initial timing partly overlapped browser tests, so
+  this is not a controlled speedup ratio. An 8 MiB attachment survived verified
+  backup/restore and subsequent editing; details are in [measurements](sync-benchmarks.md).
+
+### Compatibility and security evidence
+
+The logs of [run 42231015207](https://github.com/liminal-cipher/ephemeris/actions/runs/42231015207)
+showed Windows/Ubuntu success and macOS native tests failing 19 of 121 cases.
+macOS 26.7.2 used an aliased temporary path: `/var` resolves through `/private/var`.
+Production `directoryPath()` correctly rejects symlink ancestors. The old fixture
+passed the alias directly and failed before exercising storage behaviour.
+Injecting an aliased temporary root reproduced the exact error on Windows.
+Only the trusted fixture root now uses `realpathSync(tmpdir())`; production
+`native/paths.js` is unchanged. Positive canonical-root and negative untrusted
+traversal tests pass, including an actual child test process (with inherited
+`NODE_TEST_CONTEXT` removed so it does not silently skip the fixture).
+Other native temporary-root fixtures and path/filename assumptions were inspected;
+attachments use validated IDs rather than user-supplied filesystem paths.
+At local verification, the changed code had not run on macOS or Linux. The
+expanded CI matrix runs after publication; Windows results alone do not establish
+that the macOS runner failure is fixed.
+
+The initial current audit reported 31 moderate and one low advisory. All Tiptap
+packages moved to 3.33.0, collaboration-caret replaced collaboration-cursor, maths
+extension moved to 1.4.0 and its nested KaTeX uses the application's version.
+The [Tiptap advisory](https://github.com/ueberdosis/tiptap/security/advisories/GHSA-cp6q-959q-f8rh)
+and [v3 migration guide](https://tiptap.dev/docs/guides/upgrade-tiptap-v2) informed
+the change. The regenerated lock also refreshed other already-allowed ranges,
+including React 19.3.1, Vite 8.3.6, Playwright 1.65.0 and Yjs 13.6.33; this was not
+a Tiptap-only lock change. `npm ci` succeeds; `npm audit --json` reports zero.
+No force audit fix or legacy-peer-dependency bypass was used. Tests preserve
+Korean text, bold/maths attributes and opaque Yjs metadata and reject malicious
+JSON attributes. Audit success is not a general security certification.
+
+Writes remain IPv4-loopback-only, require exact Host/Origin, bearer credentials,
+JSON bodies, bounded payloads, independent Worker permission checks and versions.
+Old read-only credentials remain read-only. Native uploads are capped at 4 MiB;
+editing admits at most 1 MiB Base64 documents and 2 MiB recovery records. Credentials
+are memory-only in the browser. No provider duplication, history deletion,
+arbitrary plugin execution or unexpected external request was introduced.
+
+### Verification
+
+Windows x64 / Node 24.20.0, disposable synthetic data only:
+
+| Command / acceptance | Result |
+| --- | --- |
+| `npm test` | 65 tests passed in 13 files |
+| `npm run test:native` | 132 passed; zero failures/skips/TODOs, 22.3 seconds; includes real TCP/provider interruption and two real MCP subprocess tests |
+| `npm run test:e2e` | Final combined run: 31 passed in 1.8 minutes; Chromium 11, Firefox 10, WebKit 10 |
+| `npm run build` | Passed, 65 offline assets; existing large-chunk warning remains (main JS approximately 1.74 MB / 551 kB gzip) |
+| `npm run lint` | Exit 0; inherited browser warnings remain; new native implementation passes focused lint |
+| `npm audit --json` | Zero reported advisories |
+| Focused `npx oxlint` and `git diff --check` | Passed without output |
+| `node native/benchmark-workspace.js` | Completed; exact attachment and restored editing verified; peak RSS 169,708 KiB |
+| Actual macOS / Linux execution of this revision | NOT RUN; prior baseline CI is not evidence for these changes |
+| Shipping Safari, physical OS Korean IME, physical power loss, human acceptance | NOT RUN |
+
+Playwright runs the real built application with isolated contexts, local TCP
+Companions and disposable Vaults. Browser flows cover offline editing/search,
+two-tab convergence, JSON export/import into another context, trash/restore and
+default no-external-network startup. Native flows cover Korean/English input,
+synthetic composition events, save/rename/move/undo/redo, exact attachment download,
+refresh, scoped connection, errors/offline, retained drafts, stale-write conflict,
+comparison/copy, daily workflows and saved views. Healthy native flows assert
+no console errors, page errors, failed requests or external connections; negative
+flows deliberately stop the Companion. Desktop and 420-pixel layouts, dark/light
+themes and modal focus are checked. WebKit is engine coverage, not shipping Safari.
+The Chromium-only crash test owns and kills its own isolated browser process tree.
+
+Screenshots are generated under `test-results/` by the tests and are inspected,
+including desktop/narrow/dark editing, conflict, board and crash recovery. A test
+rerun replaces this generated directory. Failure traces are retained only on
+failure; passing screenshots are not invented manual acceptance evidence.
+
+The final run retains 20 PNGs and no failure trace. Representative local paths:
+
+- `test-results/native-edit-native-note-li-6056e-resh-and-responsive-editing-chromium/native-edit-desktop.png`
+- `test-results/native-edit-native-note-li-6056e-resh-and-responsive-editing-webkit/native-edit-dark.png`
+- `test-results/native-edit-offline-pendin-f1744--destructive-recovered-copy-chromium/native-conflict.png`
+- `test-results/native-edit-capture-daily--da2a7--views-share-the-same-Vault-chromium/native-board-cards.png`
+- `test-results/native-crash-forced-Chromi-f9750-raft-in-an-isolated-profile-chromium/native-crash-recovered.png`
+
+Initial failures were investigated, not hidden by automatic retries: the pending
+journal lost data on a real crash, a background global shortcut stole native
+focus, undo grouping crossed a save boundary, and a late query replaced typed
+filters. All were corrected and rerun. A WebKit test also attempted file selection
+while the control was disabled; `setInputFiles` bypasses actionability, so the test
+now waits for the move's UI acknowledgement. That flow passed three consecutive
+WebKit runs before the final combined pass. Known dependency-resolution scratch
+was inspected and recycled; normal test teardown removed managed fixtures and
+the owned crash browser was confirmed stopped. Screenshots remain as deliverables.
+
+### Changed files
+
+| Area | Exact paths |
+| --- | --- |
+| Path regression | `native/test/vault.test.js`, `native/test/paths.test.js` |
+| Scoped Companion | `native/companion.js`, `native/companion-worker.js`, `native/companion-operations.js`, `native/serve.js`, `native/test/companion-write.test.js` |
+| Canonical queries | `native/vault.js`, `native/knowledge.js`, `native/test/knowledge.test.js`, `native/test/search.test.js`, `native/benchmark-workspace.js` |
+| Native editing/recovery | `src/storage/nativeConnection.js`, `src/storage/nativeDocument.js`, `src/storage/nativeDraftJournal.js`, `src/storage/nativeDocument.test.js`, `src/components/NativeWorkspace.jsx`, `src/components/NativeWorkspace.css`, `src/components/NativeNoteEditor.jsx`, `src/App.jsx` |
+| Daily workflows/views | `src/storage/nativeTemplates.js`, `src/components/NativeViews.jsx`, `src/components/NativeViews.test.jsx` |
+| MCP | `native/mcp.js`, `native/mcp-tools.js`, `native/test/mcp.test.js` |
+| Editor upgrade | `package.json`, `package-lock.json`, `src/components/PageEditor.jsx`, `src/components/editor/EditorToolbar.jsx`, `src/storage/noteContent.js`, `src/storage/editorCompatibility.test.js` |
+| Browser acceptance/CI | `e2e/workspace.spec.js`, `e2e/native-edit.spec.js`, `e2e/native-crash.spec.js`, `playwright.config.js`, `.github/workflows/ci.yml` |
+| Documentation | `README.md`, `PLAN.md`, `DECISIONS.md`, `docs/native-vault.md`, `docs/sync-benchmarks.md`, `docs/ephemeris-2-handoff.md`; ignored local `CURRENT_TASK.md` |
+
+### Use, migration and remaining work
+
+Follow the [native guide](native-vault.md#explicit-native-editing-and-recovery) for
+an explicit `--edit` Companion session and the MCP command. Start with a synthetic
+or backed-up copy. The existing [BrowserVault migration](native-vault.md#isolated-migration-and-recovery)
+requires an explicit v2 JSON export and a new empty Native Vault. Inspect the copy,
+export/verify a native snapshot, restore it into another new directory and validate
+editing before choosing it. Keep the original browser data and backup. To recover
+pending writes, reconnect a fresh session to the same physical Vault and select
+its retained draft. A restored/replaced Vault has a new recovery namespace; no
+pending write is silently replayed there. Corrupt/interrupted restore directories
+stay closed; restore the original verified snapshot into another new directory.
+
+Markdown/YAML/Obsidian/Joplin import/export and round-trip migration previews were
+not implemented in this iteration. Unknown rich text still needs a supported
+codec/source-preservation contract before such conversion is safe. The existing
+lossless JSON/native snapshot paths remain available. Full revision history and
+sync conflict inbox, retry/status/identity dashboard and backup wizard still need
+UI work; current editing conflicts are not the whole sync conflict model.
+No tabs/splits, heading/block embeds, Canvas, clipper, OCR, semantic search or
+large browser-sidebar benchmark is claimed. Native attachment editing beyond the
+4 MiB UI cap, session renewal without CLI, a friendlier parent picker, continuous
+offline stress acceptance and lower backup/restore latency remain practical gaps.
+
+Electron, Tauri with Node sidecar and browser-plus-Companion trade-offs are in the
+[desktop comparison](native-vault.md#desktop-distribution-decision). No runtime
+bundle, installer, updater, signing, notarisation or release was added. Actual
+macOS/Linux CI and hands-on Windows/macOS acceptance remain gates before everyday
+private-data use. The historical Phase C and overall Ephemeris 2.0 are not marked
+complete by this work.
+
 ## Chunked payloads and durable provider: 6 November 2026
 
 Baseline: clean `main` at `cb39da5`. The user authorised sequential follow-up
