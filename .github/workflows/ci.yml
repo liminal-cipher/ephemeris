@@ -9,7 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -23,6 +23,8 @@ jobs:
       - run: npm test
       - name: Native storage, recovery and provider conformance
         run: npm run test:native
+      - name: Chunked payload and real HTTP resource measurement
+        run: node native/benchmark-resources.js payload-http
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

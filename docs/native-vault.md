@@ -1,8 +1,8 @@
 # Native Vault milestone
 
-Current Phase C-2 work starts from fetched `main` at `6849de7`, 1 November
-2026. Native snapshots, indexed search, the opt-in read-only browser companion,
-simulated synchronisation and explicit conflict recovery are implemented. BrowserVault
+Current follow-up work starts from `main` at `cb39da5`, 6 November 2026.
+Native snapshots, indexed search, the opt-in read-only browser companion,
+chunked attachment sync, a local authenticated HTTP provider and explicit conflict recovery are implemented. BrowserVault
 remains the browser editor's canonical store.
 There is no production Sync Engine or MCP server. Overall Phase B is not declared
 complete pending platform verification and the remaining acceptance work below.
@@ -507,3 +507,16 @@ searches scan the projection; large-Vault search performance is not benchmarked.
 4. Specify authenticated provider behaviour, epoch recovery and transport-level
    fault contracts. Only then implement a separately authorised real transport.
    MCP and E2EE remain later work; simulator results are not network reliability.
+## Schema 4 and the HTTP provider
+
+The optional `enablePayloads()` upgrade follows `enableSync()` and
+`enableRecovery()`. It adds content-addressed attachment chunks and resource
+limits while preserving existing operations and backup format 1. All peers
+must understand schema 4/protocol 3 before using it.
+
+`syncRetention(noteId)` explains retained history and current quotas.
+`configureSyncResources(limits)` can set lower logical quotas.
+`restartSyncTarget(target, expectedEpoch, newEpoch)` explicitly requeues
+surviving operations for one provider; it never deletes local notes or history.
+The authenticated server/client CLIs, configuration, recovery procedure and
+current limitations are described in [the provider guide](sync-provider.md).

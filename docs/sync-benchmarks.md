@@ -1,5 +1,41 @@
 # Sync resource measurements
 
+## Schema 4 and real HTTP: 6 November 2026
+
+Windows, Node 24.20.0, synthetic data in automatically removed temporary
+directories. These are individual observations, not capacity guarantees.
+
+| Run | Attachment | Further edits | Time ms | Peak RSS KiB | Source SQLite bytes |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Initial schema 4 simulator experiment | 32 MiB zero-filled | 10, all accepted | 19,672 | 322,124 | 57,647,104 |
+| Final schema 4 real HTTP experiment | 32 MiB random bytes | 10, all accepted | 28,723 | 342,536 | 91,021,312 |
+
+Both create a 1 MiB Yjs document and transfer its attachment between independent
+Vaults. The final HTTP run also reads the receiving Vault's full attachment and
+compares its SHA-256 with the source; `attachmentVerified` was `true`. Its RSS
+includes the server, two clients and the full attachment read. It ran after
+the concurrent native suite finished. Random data produces 128 distinct chunks;
+the zero-filled experiment can reuse a single repeated chunk.
+
+```text
+node native/benchmark-resources.js payload-chunked
+node native/benchmark-resources.js payload-http
+```
+
+The earlier schema 3 experiment below peaked near 1 GiB and rejected its next
+edit. Schema 4's final HTTP observation was about 335 MiB and completed ten
+additional edits. Workload, server persistence and validation differ, so these
+are not comparable throughput measurements. Yjs snapshots remain inline; ten
+edits still add history and the existing per-note budget remains finite.
+
+New tests check global operation/chunk/materialised-attachment quotas, preserved
+data on rejection, and the conflict evidence cap. The real HTTP transport bounds
+operations to 2 MiB, pull pages to 4 MiB and chunks to 256 KiB. The CI workflow
+now runs the HTTP measurement on Windows, Ubuntu and macOS, but those new remote
+runs have not been executed because the changes have not been pushed.
+
+## Historical schema 2/3 measurements
+
 Measured on 1 November 2026, Windows, Node 24.20.0, Intel Core Ultra X7 358H.
 All data is synthetic in temporary directories. These are single runs, not
 statistical throughput claims or capacity targets. No production provider was

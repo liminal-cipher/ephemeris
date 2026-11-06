@@ -7,20 +7,32 @@ import { NativeVault } from './vault.js'
 import { synchronise } from './sync/engine.js'
 import { SimulatedProvider } from './sync/simulatedProvider.js'
 import { hash } from './sync/protocol.js'
+import { randomBytes } from 'node:crypto'
+import { startSyncServer, HttpProvider } from './sync/httpProvider.js'
+import { digest } from './validation.js'
 
 const mode=process.argv[2]??'payload',root=mkdtempSync(path.join(realpathSync(tmpdir()),'ephemeris-resources-'))
-const a=NativeVault.create(path.join(root,'a')),b=NativeVault.create(path.join(root,'b')),p=new SimulatedProvider()
+const a=NativeVault.create(path.join(root,'a')),b=NativeVault.create(path.join(root,'b'))
+let p=new SimulatedProvider(),server
 try {
   for(const v of [a,b]){v.enableSync();v.enableRecovery()}
+  if(['payload-chunked','payload-http'].includes(mode))for(const v of [a,b])v.enablePayloads()
+  if(mode==='payload-http') {
+    const token=randomBytes(32).toString('base64url')
+    server=await startSyncServer({directory:path.join(root,'server'),principals:[{tokenHash:digest(token),namespace:'default'}]})
+    p=new HttpProvider({url:server.url,token,namespace:'default'})
+  }
   const start=performance.now();let count,details
-  if(mode==='payload') {
+  if(mode.startsWith('payload')) {
     const doc=new Y.Doc();doc.getText('body').insert(0,'x'.repeat(1024*1024))
     a.create({id:'large',document:Y.encodeStateAsUpdate(doc)});doc.destroy()
-    a.putAttachment('large',{id:'blob',bytes:new Uint8Array(32*1024*1024)},a.read('large'))
+    a.putAttachment('large',{id:'blob',bytes:mode==='payload-http'?randomBytes(32*1024*1024):new Uint8Array(32*1024*1024)},a.read('large'))
     await synchronise(a,p);await synchronise(b,p)
     let rejected=false
     try{a.rename('large','another full snapshot',a.read('large'))}catch(error){if(!/resource limit/.test(error.message))throw error;rejected=true}
-    details={documentBytes:1024*1024,attachmentBytes:32*1024*1024,nextEditRejected:rejected}
+    if(!rejected){for(let i=0;i<9;i++)a.rename('large',`edit ${i}`,a.read('large'));await synchronise(a,p);await synchronise(b,p)}
+    if(digest(b.readAttachment('large','blob').bytes)!==a.listAttachments('large')[0].sha256)throw new Error('Benchmark attachment mismatch')
+    details={documentBytes:1024*1024,attachmentBytes:32*1024*1024,nextEditRejected:rejected,subsequentEdits:rejected?0:10,attachmentVerified:true}
   } else {
     a.create({id:'n'});await synchronise(a,p);await synchronise(b,p)
     const base=p.exportState().operations[0]
@@ -34,4 +46,4 @@ try {
   }
   const milliseconds=Math.round(performance.now()-start)
   a.close();b.close();console.log(JSON.stringify({mode,...details,milliseconds,peakRssKiB:process.resourceUsage().maxRSS,databaseBytes:statSync(path.join(root,'a','vault.sqlite')).size}))
-} finally{a.close();b.close();rmSync(root,{recursive:true,force:true})}
+} finally{await server?.close();a.close();b.close();rmSync(root,{recursive:true,force:true})}

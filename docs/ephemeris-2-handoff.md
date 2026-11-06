@@ -1,5 +1,64 @@
 # Ephemeris 2: implementation and verification handoff
 
+## Chunked payloads and durable provider: 6 November 2026
+
+Baseline: clean `main` at `cb39da5`. The user authorised sequential follow-up
+implementation and local commits, explicitly prohibited pushing, and selected
+a self-hosted Node/SQLite provider. No deployment or real-user Vault access was
+performed. [Plan](../PLAN.md), [decisions](../DECISIONS.md) and
+[provider guide](sync-provider.md) describe scope, contracts and operation.
+
+Implemented in order:
+
+1. Explicit schema 4/protocol 3 attachment manifests, 256 KiB content-addressed
+   chunks, deduplicated storage and bounded transfer. Existing operation bytes
+   and schemas 1–3 remain supported; native snapshot format 1 includes schema 4.
+   Metadata edits no longer copy every attachment into history. Old attachment
+   conflicts can still be resolved after upgrading without losing evidence.
+2. Global operation, chunk and materialised-attachment budgets; bounded conflict
+   computation; `syncRetention()` reports protected history, unresolved evidence,
+   provider progress and usage. Quota failures roll back notes and checkpoints.
+   Destructive compaction is deliberately not implemented: provider receipts do
+   not establish that offline clients or restored/forked Vaults can lose history.
+3. A real authenticated HTTP client/server, namespace isolation, persistent
+   revocation, signed expiring cursors, durable SQLite acknowledgements and
+   explicit epoch recovery. Request/response limits, cancellation and redirect
+   rejection are enforced. CLI entry points use private external configuration.
+4. Real TCP conformance, forced process termination, interrupted upload,
+   `SQLITE_FULL`, replay after an older server restore, quota and corruption
+   tests; the CI matrix now includes Windows/Ubuntu/macOS and the HTTP benchmark.
+
+Verification on Windows / Node 24.20.0, synthetic data only:
+
+| Check | Result |
+| --- | --- |
+| `npm run test:native` | 121 passed; no failures, skips or TODOs; final combined run 20.5 seconds |
+| `npm test` | 56 passed in 10 files |
+| `npm run lint` | Exit 0; existing browser warnings only |
+| `npm run build` | Passed; 66 offline assets; existing chunk-size warning |
+| `npm run test:e2e` | 7 Chromium tests passed |
+| `npx oxlint native`, `git diff --check` | Passed |
+| Real HTTP 32 MiB payload | Transfer and 10 subsequent edits passed; see current benchmark measurements |
+| New remote CI / Ubuntu / macOS | NOT RUN; no push; local Linux runtime unavailable |
+| Physical power loss / real volume exhaustion | NOT RUN; process termination and SQLite page-budget exhaustion tested instead |
+| External TLS / independent physical devices / human acceptance | NOT RUN; local TCP and automated flows only |
+
+The previous `cb39da5` Windows/Ubuntu run was separately inspected and succeeded:
+[Validate](https://github.com/liminal-cipher/ephemeris/actions/runs/41225381287).
+It is not evidence for the new changes. Dependency installation was unchanged;
+the installed test/build versions matched `package-lock.json`.
+
+Remaining operational gates are the NOT RUN rows above. The provider guide
+contains the manual acceptance procedure. Schema 4 retains the existing
+64 MiB/1,024-operation per-note history limit; it does not automatically delete
+or archive old operations to escape that limit. Yjs document snapshots are still
+inline, HTTP operations are capped at 2 MiB, and physical RSS/WAL size are not
+hard-capped by logical quotas. E2EE, scheduling, MCP, browser write APIs and the
+separate dependency/security upgrade remain outside this follow-up scope.
+
+The following C-2 and browser sections are historical; this section supersedes
+their current-state and remaining-transport statements.
+
 ## Phase C-2 recovery and resource safety: 1 November 2026
 
 Baseline: fetched clean `main` at `6849de7`, including the documentation update
