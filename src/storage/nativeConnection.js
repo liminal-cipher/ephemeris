@@ -21,7 +21,13 @@ export function nativeConnection(session) {
       signal: AbortSignal.any([controller.signal, AbortSignal.timeout(12000)]),
     }).catch(() => { throw new Error('Companion unavailable. Pending drafts and browser notes are retained.') })
     if (!response.ok) {
-      const error = new Error(response.status === 409 ? 'Conflict: this note changed in another client. Your draft is retained.' : `Native request failed (${response.status}). Check the companion and load a current session file.`)
+      const messages = {
+        400: 'Native request rejected (400). Check the note properties, parent and file limits.',
+        404: 'Native item not found (404). Refresh the note list and check the parent note ID.',
+        409: 'Conflict: this note changed in another client. Your draft is retained.',
+        413: 'Native request too large (413). Reduce the file or document size; your draft is retained.',
+      }
+      const error = new Error(messages[response.status] || `Native request failed (${response.status}). Check the companion and load a current session file.`)
       error.status = response.status
       throw error
     }

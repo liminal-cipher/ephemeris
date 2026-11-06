@@ -21,7 +21,9 @@ export default function NativeWorkspace({ onClose }) {
   const [moveTarget, setMoveTarget] = useState('')
   const [views, setViews] = useState(false)
   const [viewClient, setViewClient] = useState(null)
-  const connection = useRef(null), generation = useRef(0), active = useRef(null), dialog = useRef(null)
+  const connection = useRef(null), generation = useRef(0), active = useRef(null), dialog = useRef(null), working = useRef(false)
+  const errorMessage = useRef(null)
+  useEffect(() => { if (error) errorMessage.current?.scrollIntoView({ block: 'nearest' }) }, [error])
   const can = permission => session?.version === 2 && session.permissions.includes(permission)
   const refreshDrafts = async () => { if (session?.vaultId) setDrafts(await retainedDrafts(session.vaultId)) }
   const release = async () => {
@@ -44,11 +46,15 @@ export default function NativeWorkspace({ onClose }) {
     }
   }, [])
   const perform = async action => {
+    // Guard synchronously: Escape, form submission and file reads can bypass
+    // disabled buttons before React paints the pending state.
+    if (working.current) return
+    working.current = true
     const current = generation.current
     setBusy(true); setError('')
     try { await action(current) }
     catch (failure) { if (current === generation.current) setError(failure.message === 'Failed to fetch' ? 'Companion unavailable. Pending drafts and browser notes are retained.' : failure.message) }
-    finally { if (current === generation.current) setBusy(false) }
+    finally { working.current = false; if (current === generation.current) setBusy(false) }
   }
   const disconnect = async () => {
     await release()
@@ -100,12 +106,12 @@ export default function NativeWorkspace({ onClose }) {
     }
     if (current === generation.current) {
       await load(connection.current, 0, current, false)
-      setViews(false); setNote(result); setChanges(null)
-      if (result.deleted === null) edit(result)
-      else setError('This daily note is in the trash. Restore it explicitly to continue.')
+      setViews(false); setNote(result); setChanges(null); setMoveTarget(result.metadata.parentId || '')
+      if (result.deleted !== null) setError('This daily note is in the trash. Restore it explicitly to continue.')
+      else if (can('notes:update')) edit(result)
     }
   })
-  const mutate = (operation, fields = {}) => perform(async current => {
+  const mutate = async (current, operation, fields = {}) => {
     if (active.current && !(await active.current.flush())) throw new Error('Save or recover the pending draft before changing this note.')
     const result = await connection.current.write(operation, { id: note.id, expected: active.current?.base || expected(note), ...fields })
     await release()
@@ -113,7 +119,7 @@ export default function NativeWorkspace({ onClose }) {
       setNote(result); setChanges(null); setMoveTarget(result.metadata.parentId || '')
       await load(connection.current, 0, current)
     }
-  })
+  }
   return <section ref={dialog} className="native-workspace" role="dialog" aria-modal="true" aria-label="Native workspace" onKeyDown={event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && !event.nativeEvent.isComposing) {
       event.preventDefault(); event.stopPropagation(); dialog.current.querySelector('[aria-label="Search native notes"]')?.focus()
@@ -126,13 +132,14 @@ export default function NativeWorkspace({ onClose }) {
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }
   }}>
-    <header><h2>Native workspace · {session?.version === 2 ? 'Editing session' : 'Read only'}</h2><button onClick={() => perform(async () => { await release(); onClose() })}>Close native workspace</button></header>
+    <header><h2>Native workspace · {session?.version === 2 ? 'Editing session' : 'Read only'}</h2><button disabled={busy} onClick={() => perform(async () => { await release(); onClose() })}>Close native workspace</button></header>
     <details open={!connected}><summary>Connection and recovery</summary>
     <p>Your browser notes stay in their existing workspace. Select a private session for the local Vault you want to use.</p>
     <label>Private session file <input type="file" accept="application/json,.json" disabled={connected || busy} onChange={event => {
       const file = event.target.files?.[0]
       if (!file) return
       perform(async current => {
+        setSession(null)
         if (file.size > 4096) throw new Error('Invalid session file')
         const parsed = parseNativeSession(await file.text())
         if (current === generation.current) setSession(parsed)
@@ -140,9 +147,9 @@ export default function NativeWorkspace({ onClose }) {
       event.target.value = ''
     }} /></label>
     {!connected && <button onClick={connect} disabled={!session || busy}>{session?.version === 2 ? 'Connect for editing' : 'Connect read only'}</button>}
-    {session && <button onClick={() => perform(disconnect)}>Disconnect and forget session</button>}
+    {session && <button disabled={busy} onClick={() => perform(disconnect)}>Disconnect and forget session</button>}
     </details>
-    {error && <p role="alert">{error}</p>}
+    {error && <p ref={errorMessage} role="alert">{error}</p>}
     {busy && <p role="status">Working with native Vault…</p>}
     {connected && <>
       <p role="status">Connected · {session.version === 2 ? 'Explicit editing permissions · expires ' + new Date(session.expiresAt).toLocaleTimeString() : 'Read only'}</p>
@@ -155,7 +162,7 @@ export default function NativeWorkspace({ onClose }) {
       <button disabled={busy} onClick={() => perform(async () => { await release(); setViews(true); setNote(null); setChanges(null) })}>Open views</button>
       {drafts.length > 0 && <details className="native-recovery" open><summary>Retained drafts ({drafts.length})</summary>
         <p>Recover a draft or download it. A conflicting saved version is never overwritten automatically.</p>
-        {drafts.map(draft => <div key={draft.key}><button disabled={busy} onClick={() => select(draft.id, draft)}>Recover draft: {draft.metadata?.title || draft.id}</button>
+        {drafts.map(draft => <div key={draft.key}><button disabled={busy || !can('notes:update')} onClick={() => select(draft.id, draft)}>Recover draft: {draft.metadata?.title || draft.id}</button>
           <button onClick={() => download(JSON.stringify(draft, null, 2), 'native-retained-draft.json')}>Download retained draft</button></div>)}
       </details>}
       <form onSubmit={event => { event.preventDefault(); perform(current => load(connection.current, 0, current)) }}>
@@ -185,32 +192,32 @@ export default function NativeWorkspace({ onClose }) {
               const snapshot = model.snapshot(), id = crypto.randomUUID()
               const result = await connection.current.write('create', { id, metadata: { ...snapshot.metadata, title: (snapshot.metadata.title || 'Untitled') + ' (recovered copy)', parentId: null }, document: snapshot.document })
               await release()
-              if (current === generation.current) { setNote(result); edit(result); await load(connection.current, 0, current) }
+              if (current === generation.current) { setNote(result); setMoveTarget(result.metadata.parentId || ''); edit(result); await load(connection.current, 0, current) }
             })} /> : <>
             <h3>{note.metadata.title || 'Untitled'}</h3>
             <p>Version {note.version} · Text coverage: {note.preview.coverage}</p>
             {note.preview.coverage !== 'complete' && <p role="status">Some content cannot be displayed: {note.preview.reasons.join(', ')}. Original data remains available for recovery.</p>}
             <pre>{note.preview.text || 'No supported text preview.'}</pre>
-            {can('notes:update') && note.deleted === null && <button onClick={() => perform(async () => edit(note))}>Edit native note</button>}
+            {can('notes:update') && note.deleted === null && <button disabled={busy} onClick={() => perform(async () => edit(note))}>Edit native note</button>}
           </>}
           {comparison && <section aria-label="Saved version comparison"><h3>Saved version · {comparison.metadata.title}</h3><pre>{comparison.preview.text}</pre>
             <p>Saved version {comparison.version}; your draft remains in the editor above.</p></section>}
           <details><summary>Metadata</summary><pre>{JSON.stringify(note.metadata, null, 2)}</pre></details>
           <button onClick={() => download(decodeDocument(note.document), 'native-document.yjs')}>Download original Yjs</button>
           <button onClick={() => download(JSON.stringify(note, null, 2), 'native-note-recovery.json')}>Download recovery data</button>
-          {can('notes:update') && note.deleted === null && <form onSubmit={event => { event.preventDefault(); mutate('update', { metadata: { parentId: moveTarget || null } }) }}>
+          {can('notes:update') && note.deleted === null && <form onSubmit={event => { event.preventDefault(); perform(current => mutate(current, 'update', { metadata: { parentId: moveTarget || null } })) }}>
             <label>Move to parent note ID <input value={moveTarget} onChange={event => setMoveTarget(event.target.value)} placeholder="Empty for workspace root" /></label>
             <button disabled={busy}>Move native note</button>
             <p className="native-hint">Note ID: {note.id}. Moving changes the parent; deleting a note keeps its children.</p>
           </form>}
-          {can('notes:delete') && note.deleted === null && <button disabled={busy} onClick={() => mutate('delete')}>Move note to trash</button>}
-          {can('notes:restore') && note.deleted !== null && <button disabled={busy} onClick={() => mutate('restore')}>Restore native note to root</button>}
+          {can('notes:delete') && note.deleted === null && <button disabled={busy} onClick={() => perform(current => mutate(current, 'delete'))}>Move note to trash</button>}
+          {can('notes:restore') && note.deleted !== null && <button disabled={busy} onClick={() => perform(current => mutate(current, 'restore'))}>Restore native note to root</button>}
           {can('attachments:create') && note.deleted === null && <label>Attach local file <input type="file" disabled={busy} onChange={event => {
             const file = event.target.files?.[0]; event.target.value = ''
             if (!file) return
-            perform(async () => {
+            perform(async current => {
               if (file.size > 4 * 1024 * 1024) throw new Error('Browser attachment upload is limited to 4 MiB.')
-              await mutate('attach', { attachment: { id: crypto.randomUUID(), metadata: { name: file.name, type: file.type }, bytes: encodeDocument(new Uint8Array(await file.arrayBuffer())) } })
+              await mutate(current, 'attach', { attachment: { id: crypto.randomUUID(), metadata: { name: file.name, type: file.type }, bytes: encodeDocument(new Uint8Array(await file.arrayBuffer())) } })
             })
           }} /></label>}
           <ul>{note.attachments.map(attachment => <li key={attachment.id}><button disabled={busy} onClick={() => perform(async current => {

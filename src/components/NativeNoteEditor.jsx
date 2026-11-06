@@ -14,6 +14,7 @@ const labels = { initialising: 'Checking recovery storage…', journaling: 'Secu
 
 export default function NativeNoteEditor({ document: model, onDownload, onReview, onCopy, busy }) {
   const [, render] = useReducer(value => value + 1, 0)
+  const locked = busy || ['initialising', 'storage-error', 'conflict'].includes(model.status)
   useEffect(() => model.subscribe(render), [model])
   const editor = useEditor({
     extensions: [StarterKit.configure({ undoRedo: false, codeBlock: false, link: false }),
@@ -31,14 +32,21 @@ export default function NativeNoteEditor({ document: model, onDownload, onReview
     // selection or undo history. The next edit can be undone independently.
     if (model.status === 'saved' && editor && !editor.isDestroyed) yUndoPluginKey.getState(editor.state)?.undoManager.stopCapturing()
   }), [model, editor])
-  useEffect(() => { editor?.setEditable(!['initialising', 'storage-error', 'conflict'].includes(model.status)) })
+  useEffect(() => { editor?.setEditable(!locked) }, [editor, locked])
+  const format = command => {
+    if (!editor || locked) return
+    // Tiptap's focus command defers focus to another frame. A subsequent click
+    // in a property field must keep its focus, so restore the selection now.
+    editor.view.focus()
+    command(editor.chain()).run()
+  }
   return <div className="native-editor" onKeyDown={event => {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && !event.nativeEvent.isComposing) { event.preventDefault(); model.flush() }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && !event.nativeEvent.isComposing) { event.preventDefault(); if (!locked) model.flush() }
   }}>
     <p role="status" aria-live="polite">{labels[model.status]}</p>
     {model.error && <p role="alert">{model.error}</p>}
-    <label>Native note title <input value={model.metadata.title || ''} disabled={model.status === 'conflict' || model.status === 'storage-error'} onChange={event => model.setMetadata({ title: event.target.value })} /></label>
-    <details><summary>Properties and tags</summary><fieldset disabled={['storage-error', 'conflict'].includes(model.status)} className="native-properties">
+    <label>Native note title <input value={model.metadata.title || ''} disabled={locked} onChange={event => model.setMetadata({ title: event.target.value })} /></label>
+    <details><summary>Properties and tags</summary><fieldset disabled={locked} className="native-properties">
       <label>Tags (comma separated) <input disabled={model.metadata.tags !== undefined && (!Array.isArray(model.metadata.tags) || model.metadata.tags.some(tag => typeof tag !== 'string'))} defaultValue={Array.isArray(model.metadata.tags) ? model.metadata.tags.join(', ') : ''} onChange={event => {
         const tags = [...new Set(event.target.value.split(',').map(value => value.trim()).filter(Boolean))]
         if (JSON.stringify(tags) !== JSON.stringify(model.metadata.tags || [])) model.setMetadata({ tags })
@@ -51,16 +59,16 @@ export default function NativeNoteEditor({ document: model, onDownload, onReview
       <label>Project <input value={model.metadata.project || ''} onChange={event => model.setMetadata({ project: event.target.value })} /></label>
       <label><input type="checkbox" checked={model.metadata.favorite === true} onChange={event => model.setMetadata({ favorite: event.target.checked })} />Favourite</label>
     </fieldset></details>
-    <fieldset disabled={['storage-error', 'conflict'].includes(model.status)} className="native-format" role="toolbar" aria-label="Native text formatting">
-      <button onClick={() => editor?.chain().focus().toggleBold().run()} aria-label="Native bold">Bold</button>
-      <button onClick={() => editor?.chain().focus().toggleItalic().run()} aria-label="Native italic">Italic</button>
-      <button onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}>Heading</button>
-      <button onClick={() => editor?.chain().focus().toggleBulletList().run()}>List</button>
-      <button onClick={() => editor?.chain().focus().undo().run()}>Undo</button>
-      <button onClick={() => editor?.chain().focus().redo().run()}>Redo</button>
+    <fieldset disabled={locked} className="native-format" role="toolbar" aria-label="Native text formatting">
+      <button onClick={() => format(chain => chain.toggleBold())} aria-label="Native bold">Bold</button>
+      <button onClick={() => format(chain => chain.toggleItalic())} aria-label="Native italic">Italic</button>
+      <button onClick={() => format(chain => chain.toggleHeading({ level: 2 }))}>Heading</button>
+      <button onClick={() => format(chain => chain.toggleBulletList())}>List</button>
+      <button onClick={() => format(chain => chain.undo())}>Undo</button>
+      <button onClick={() => format(chain => chain.redo())}>Redo</button>
     </fieldset>
     <EditorContent editor={editor} className="tiptap-editor" />
-    <button onClick={() => model.flush()} disabled={['saved', 'saving', 'conflict', 'storage-error'].includes(model.status)}>Save / retry</button>
+    <button onClick={() => model.flush()} disabled={locked || ['saved', 'saving'].includes(model.status)}>Save / retry</button>
     <button onClick={() => { onDownload(JSON.stringify(model.snapshot(), null, 2), 'native-pending-draft.json'); model.markExported() }}>Download pending draft</button>
     {model.status === 'conflict' && <>
       <button disabled={busy} onClick={onReview}>Compare saved version</button>
