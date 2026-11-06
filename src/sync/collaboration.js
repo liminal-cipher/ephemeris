@@ -34,10 +34,10 @@ export async function connectDocument(id, document) {
   const config = configuration
   if (!config) return null
   await document.ready
-  const { WebrtcProvider } = await import('y-webrtc')
-  if (configuration !== config) return null
-  if (providers.has(id)) return providers.get(id)
   try {
+    const { WebrtcProvider } = await import('y-webrtc')
+    if (configuration !== config) return null
+    if (providers.has(id)) return providers.get(id)
     const provider = new WebrtcProvider(`${config.room}:${id}`, document.doc, {
       signaling: [config.signaling], password: config.password,
       // No implicit public STUN/TURN endpoints. This prototype supports peers
@@ -47,7 +47,7 @@ export async function connectDocument(id, document) {
     providers.set(id, provider)
     return provider
   } catch (error) {
-    useCollaboration.setState({ error: error.message, status: 'Collaboration unavailable; local editing continues' })
+    if (configuration === config) useCollaboration.setState({ error: error.message, status: 'Collaboration unavailable; local editing continues' })
     return null
   }
 }
