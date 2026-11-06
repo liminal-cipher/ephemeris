@@ -1,40 +1,21 @@
 import { test, expect } from '@playwright/test'
-import { mkdtempSync, realpathSync, rmSync, readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
-import { NativeVault } from '../native/vault.js'
-import { startCompanion } from '../native/companion.js'
-import { WRITE_PERMISSIONS } from '../native/companion-operations.js'
+import { readFileSync } from 'node:fs'
+import { createEditingFixture, connectEditingWorkspace } from './fixtures/native-editing.js'
 
 // Intercept only synthetic local traffic to deterministically hold real replies.
 test.use({ serviceWorkers: 'block' })
-const origin = 'http://127.0.0.1:4179'
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
 // The bundled Firefox crashed on locator.dispatchEvent for this React modal;
 // constructing the same synthetic composition key in the page realm succeeds.
 const composingKey = (locator, key) => locator.evaluate((element, key) => element.dispatchEvent(
   new KeyboardEvent('keydown', { key, isComposing: true, bubbles: true, cancelable: true })), key)
-async function fixture() {
-  const root = mkdtempSync(path.join(realpathSync(tmpdir()), 'ephemeris-ui-resilience-'))
-  const directory = path.join(root, 'vault'), vault = NativeVault.create(directory)
-  const companion = await startCompanion({ directory, origin, permissions: WRITE_PERMISSIONS })
-  const session = { format: 'ephemeris-companion-session', version: 2, url: companion.url, token: companion.token,
-    origin, expiresAt: companion.expiresAt, vaultId: companion.vaultId, permissions: companion.permissions }
-  return { vault, companion, file: { name: 'synthetic-session.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(session)) },
-    close: async () => { await companion.close(); vault.close(); rmSync(root, { recursive: true, force: true }) } }
-}
 async function connect(page, file) {
   await page.goto('/')
-  await page.getByRole('button', { name: 'Native workspace', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Native workspace' })
-  await dialog.getByLabel('Private session file').setInputFiles(file)
-  await dialog.getByRole('button', { name: 'Connect for editing' }).click()
-  await expect(dialog.getByRole('button', { name: 'New native note', exact: true })).toBeEnabled()
-  return dialog
+  return connectEditingWorkspace(page, file)
 }
 
 test('native actions retain ownership until the real write finishes', async ({ page }, testInfo) => {
-  const f = await fixture(), held = deferred(), reached = deferred(), errors = []
+  const f = await createEditingFixture(), held = deferred(), reached = deferred(), errors = []
   page.on('pageerror', error => errors.push(error.message))
   try {
     const dialog = await connect(page, f.file)
@@ -62,7 +43,7 @@ test('native actions retain ownership until the real write finishes', async ({ p
 })
 
 test('new native notes reset the parent input and rejected moves remain recoverable', async ({ page }, testInfo) => {
-  const f = await fixture(), held = deferred(), reached = deferred()
+  const f = await createEditingFixture(), held = deferred(), reached = deferred()
   f.vault.create({ id: 'parent', metadata: { title: 'Parent' } })
   f.vault.create({ id: 'child', metadata: { title: 'Existing child', parentId: 'parent' } })
   try {
@@ -172,7 +153,7 @@ test('confirmation and search keep keyboard focus and respect IME composition', 
 })
 
 test('invalid session files clear the previous choice and a valid retry connects', async ({ page }) => {
-  const f = await fixture()
+  const f = await createEditingFixture()
   try {
     await page.goto('/')
     await page.getByRole('button', { name: 'Native workspace', exact: true }).click()
@@ -208,7 +189,7 @@ test('a failed optional collaboration module leaves local editing and persistenc
 })
 
 test('recovery storage failure blocks leaving until the pending draft is downloaded', async ({ page }, testInfo) => {
-  const f = await fixture(), errors = []
+  const f = await createEditingFixture(), errors = []
   page.on('pageerror', error => errors.push(error.message))
   try {
     const dialog = await connect(page, f.file)

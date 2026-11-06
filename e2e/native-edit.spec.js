@@ -1,33 +1,11 @@
 import { test, expect } from '@playwright/test'
-import { mkdtempSync, realpathSync, rmSync, readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
-import { NativeVault } from '../native/vault.js'
-import { startCompanion } from '../native/companion.js'
-import { WRITE_PERMISSIONS } from '../native/companion-operations.js'
+import { readFileSync } from 'node:fs'
+import { APP_ORIGIN as origin, createEditingFixture, connectEditingWorkspace as connect } from './fixtures/native-editing.js'
 
-const origin = 'http://127.0.0.1:4179'
-async function setup() {
-  const root = mkdtempSync(path.join(realpathSync(tmpdir()), 'ephemeris-edit-e2e-'))
-  const directory = path.join(root, 'vault'), vault = NativeVault.create(directory)
-  let companion = await startCompanion({ directory, origin, permissions: WRITE_PERMISSIONS })
-  const file = () => ({ name: 'editing-session.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'ephemeris-companion-session', version: 2,
-    url: companion.url, token: companion.token, origin, expiresAt: companion.expiresAt, permissions: companion.permissions, vaultId: companion.vaultId })) })
-  return { vault, companion, file: file(), restart: async () => { companion = await startCompanion({ directory, origin, permissions: WRITE_PERMISSIONS }); return file() },
-    close: async () => { await companion.close(); vault.close(); rmSync(root, { recursive: true, force: true }) } }
-}
-async function connect(page, file) {
-  await page.getByRole('button', { name: 'Native workspace', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Native workspace' })
-  await dialog.getByLabel('Private session file').setInputFiles(file)
-  await dialog.getByRole('button', { name: 'Connect for editing' }).click()
-  await expect(dialog.getByRole('button', { name: 'New native note', exact: true })).toBeVisible()
-  return dialog
-}
 const editor = dialog => dialog.getByRole('textbox', { name: 'Native rich text editor', exact: true })
 
 test('native note lifecycle, Korean input, attachment, refresh and responsive editing', async ({ page }, testInfo) => {
-  const fixture = await setup(), errors = [], external = [], failed = []
+  const fixture = await createEditingFixture(), errors = [], external = [], failed = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
   page.on('requestfailed', request => failed.push(request.url()))
@@ -96,7 +74,7 @@ test('native note lifecycle, Korean input, attachment, refresh and responsive ed
 })
 
 test('offline pending draft survives reload and stale saves offer a non-destructive recovered copy', async ({ page }, testInfo) => {
-  const fixture = await setup()
+  const fixture = await createEditingFixture()
   page.on('dialog', dialog => dialog.accept())
   try {
     await page.goto('/')
@@ -133,7 +111,7 @@ test('offline pending draft survives reload and stale saves offer a non-destruct
 })
 
 test('capture, daily notes, typed properties and saved table/card/kanban views share the same Vault', async ({ page }, testInfo) => {
-  const fixture = await setup()
+  const fixture = await createEditingFixture()
   try {
     await page.goto('/')
     const dialog = await connect(page, fixture.file)
