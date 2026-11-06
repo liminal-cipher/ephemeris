@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import Sidebar from './Sidebar';
-import { useStore } from '../store/useStore';
+import { useNavigationStore } from '../store/navigationStore';
 import { workspacePages, useWorkspaceStore, workspaceDoc, workspaceReady } from '../store/workspace';
 
 // Mock export/import
@@ -23,7 +23,7 @@ describe('Sidebar Component', () => {
     // Clear Yjs map
     Array.from(workspacePages.keys()).forEach(key => workspacePages.delete(key));
     useWorkspaceStore.setState({ isSynced: true, pages: {} });
-    useStore.setState({ activePageId: null });
+    useNavigationStore.setState({ activePageId: null });
   });
 
   it('renders "My Workspace"', () => {

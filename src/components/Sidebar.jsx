@@ -1,7 +1,7 @@
 import SyncSettings from './SyncSettings'
 import RecoveryPanel from './RecoveryPanel'
 import { usePagesList, useWorkspaceStore, createWorkspacePage, updateWorkspacePage, deleteWorkspacePage } from '../store/workspace'
-import { useStore } from '../store/useStore'
+import { useNavigationStore } from '../store/navigationStore'
 import { showConfirm, showToast } from '../store/dialogStore'
 import { FileText, Plus, Download, Upload, Search, Network, Trash2, X, ChevronRight, ChevronDown, ChevronsLeft } from 'lucide-react'
 import { exportWorkspace, importWorkspace } from '../utils/exportImport'
@@ -26,7 +26,7 @@ function isDescendant(parentCandidateId, targetId, pagesList) {
 export default function Sidebar({ onOpenGraph, onToggleSidebar }) {
   const pages = usePagesList()
   const isSynced = useWorkspaceStore(state => state.isSynced)
-  const { activePageId, setActivePageId } = useStore()
+  const { activePageId, setActivePageId } = useNavigationStore()
   const fileInputRef = useRef(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedPageIds, setSelectedPageIds] = useState([])

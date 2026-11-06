@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { usePagesList } from '../store/workspace';
-import { useStore } from '../store/useStore';
+import { useNavigationStore } from '../store/navigationStore';
 import { extractTextFromJson } from '../utils/linkParser';
 import { Search } from 'lucide-react';
 import PageIcon from './common/PageIcon';
@@ -48,7 +48,7 @@ export default function CommandPalette() {
   const modalRef = useRef(null);
   useModalFocus(modalRef, isOpen);
   
-  const setActivePageId = useStore((state) => state.setActivePageId);
+  const setActivePageId = useNavigationStore((state) => state.setActivePageId);
   const pages = usePagesList();
   const dexiePages = useLiveQuery(() => db.searchProjection.toArray(), []) || [];
 

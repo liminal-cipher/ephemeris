@@ -1,20 +1,20 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useStore } from './useStore';
+import { useNavigationStore } from './navigationStore';
 
-describe('useStore', () => {
+describe('navigation store', () => {
   beforeEach(() => {
     // Reset store before each test
-    useStore.setState({ activePageId: null });
+    useNavigationStore.setState({ activePageId: null });
   });
 
   it('should initialise with activePageId as null', () => {
-    const state = useStore.getState();
+    const state = useNavigationStore.getState();
     expect(state.activePageId).toBeNull();
   });
 
   it('should set activePageId', () => {
-    useStore.getState().setActivePageId(123);
-    const state = useStore.getState();
+    useNavigationStore.getState().setActivePageId(123);
+    const state = useNavigationStore.getState();
     expect(state.activePageId).toBe(123);
   });
 });

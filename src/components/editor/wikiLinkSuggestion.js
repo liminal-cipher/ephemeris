@@ -3,6 +3,7 @@ import tippy from 'tippy.js';
 import MentionList from './MentionList.jsx';
 import { vault, workspaceReady } from '../../store/workspace';
 
+// Browser workspace note suggestions for stable [[wiki links]].
 export default {
   char: '[[',
   

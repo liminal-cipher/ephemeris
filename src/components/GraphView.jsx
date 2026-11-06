@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
-import { useStore } from '../store/useStore'
+import { useNavigationStore } from '../store/navigationStore'
 import { usePagesList } from '../store/workspace'
 import { extractLinksFromPages } from '../utils/linkParser'
 import ForceGraph2D from 'react-force-graph-2d'
@@ -12,7 +12,7 @@ import './GraphView.css'
 export default function GraphView({ onClose }) {
   const dexiePages = useLiveQuery(() => db.searchProjection.toArray())
   const workspacePages = usePagesList()
-  const { setActivePageId } = useStore()
+  const { setActivePageId } = useNavigationStore()
   const fgRef = useRef()
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const containerRef = useRef(null)

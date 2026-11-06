@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
-import { useStore } from '../store/useStore'
+import { useNavigationStore } from '../store/navigationStore'
 import { usePagesList, deleteWorkspacePage, useWorkspaceStore } from '../store/workspace'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -15,7 +15,7 @@ import MathExtension from '@aarkue/tiptap-math-extension'
 import slashCommand from './editor/slashExtension'
 import TrimSelectionExtension from './editor/trimSelectionExtension'
 import { Menu, Trash2, PanelRight, PanelBottom, X } from 'lucide-react'
-import suggestion from './editor/suggestion'
+import wikiLinkSuggestion from './editor/wikiLinkSuggestion'
 import slashSuggestion from './editor/slashSuggestion'
 import 'katex/dist/katex.min.css'
 import './PageEditor.css'
@@ -29,7 +29,7 @@ import PageIcon from './common/PageIcon'
 import { showConfirm, showToast } from '../store/dialogStore'
 
 export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
-  const { activePageId, setActivePageId } = useStore()
+  const { activePageId, setActivePageId } = useNavigationStore()
   const allPages = usePagesList()
   const workspaceStatus = useWorkspaceStore(state => state.status)
 
@@ -124,7 +124,7 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
       HTMLAttributes: {
         class: 'wiki-link',
       },
-      suggestion,
+      suggestion: wikiLinkSuggestion,
     }),
     slashCommand.configure({
       suggestion: slashSuggestion,
