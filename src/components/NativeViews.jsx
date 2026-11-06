@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 const empty = { tag: '', project: '', status: '', favorite: false, sort: 'title', layout: 'table' }
 const display = value => typeof value === 'string' ? value : ''
 const tags = value => Array.isArray(value) ? value.filter(tag => typeof tag === 'string') : []
-const statusName = value => ({ todo: 'To do', doing: 'In progress', done: 'Done' })[display(value)] || display(value) || 'No status'
+const statusLabels = new Map([['todo', 'To do'], ['doing', 'In progress'], ['done', 'Done']])
+const statusName = value => statusLabels.get(display(value)) || display(value) || 'No status'
 export default function NativeViews({ client, session, onSelect }) {
   const [initialFilter] = useState(() => {
     try { return { ...empty, ...JSON.parse(localStorage.getItem('ephemeris.native-view.' + session.vaultId)) } } catch { return empty }
@@ -15,7 +16,9 @@ export default function NativeViews({ client, session, onSelect }) {
   const can = permission => session.version === 2 && session.permissions.includes(permission)
   const load = useCallback(async (definition, offset = 0) => {
     const current = ++requests.current.generation
-    setBusy(true); setError(''); setFilter(definition)
+    // Query completion (or a delayed mount effect) must never replace input
+    // entered meanwhile. Only the user or an explicitly selected view changes it.
+    setBusy(true); setError('')
     try {
       const [notes, views] = await Promise.all([client.get('views', { ...definition, offset, limit: 30 }), client.get('views', { definitions: true, limit: 100 })])
       if (requests.current.generation !== current) return
@@ -65,7 +68,10 @@ export default function NativeViews({ client, session, onSelect }) {
       </select></label>
       <button disabled={busy}>Apply view</button>
     </form>
-    <label>Saved views <select value="" disabled={busy} onChange={event => { const chosen = saved.find(note => note.id === event.target.value); if (chosen) load({ ...empty, ...chosen.metadata.view }) }}>
+    <label>Saved views <select value="" disabled={busy} onChange={event => {
+      const chosen = saved.find(note => note.id === event.target.value)
+      if (chosen) { const definition = { ...empty, ...chosen.metadata.view }; setFilter(definition); load(definition) }
+    }}>
       <option value="">Choose a saved view</option>{saved.map(note => <option key={note.id} value={note.id}>{note.metadata.title}</option>)}
     </select></label>
     {can('notes:create') && <form onSubmit={async event => {

@@ -160,6 +160,7 @@ test('capture, daily notes, typed properties and saved table/card/kanban views s
     const views = dialog.getByRole('region', { name: 'Native structured views' })
     await views.getByLabel('Filter tag', { exact: true }).fill('프로젝트')
     await views.getByRole('button', { name: 'Apply view', exact: true }).click()
+    await expect(views.getByLabel('Filter tag', { exact: true })).toHaveValue('프로젝트')
     await expect(views.getByRole('table')).toContainText('출시 준비')
     await views.getByLabel('View layout').selectOption('cards')
     await views.getByRole('button', { name: 'Apply view', exact: true }).click()
