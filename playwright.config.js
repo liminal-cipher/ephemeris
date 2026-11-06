@@ -5,6 +5,8 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   timeout: 30000,
+  projects: ['chromium', 'firefox', 'webkit'].map(browserName => ({ name: browserName, use: { browserName },
+    ...(browserName === 'chromium' ? {} : { testIgnore: '**/native-crash.spec.js' }) })),
   use: { baseURL: 'http://127.0.0.1:4179', trace: 'retain-on-failure' },
   webServer: {
     command: 'npm run preview -- --host 127.0.0.1 --port 4179 --strictPort',

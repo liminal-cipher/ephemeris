@@ -26,7 +26,7 @@ jobs:
       - name: Chunked payload and real HTTP resource measurement
         run: node native/benchmark-resources.js payload-http
       - run: npm run build
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium firefox webkit
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()
