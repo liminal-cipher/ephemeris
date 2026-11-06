@@ -13,6 +13,7 @@ import { snapshot, decode, equal } from './sync/protocol.js'
 import { migrateRecovery, requested, hierarchy, RECOVERY_TABLES } from './sync/recovery.js'
 import { PAYLOAD_TABLES, migratePayloads, attachmentContent, materializeContent, readChunk, putChunk } from './sync/payloads.js'
 import { configureResources, retentionReport, checkResources } from './sync/resources.js'
+import { queryNotes } from './knowledge.js'
 
 const ACCESS = Symbol('Vault construction')
 
@@ -184,9 +185,12 @@ export class NativeVault {
 
   listPage(options = {}) {
     const { limit, offset } = pageOptions(options)
-    return this.#db.prepare('SELECT id,metadata,version,content_state FROM notes WHERE deleted IS NULL AND recovery=0 ORDER BY id LIMIT ? OFFSET ?')
-      .all(limit, offset).map(row => ({ id: row.id, metadata: JSON.parse(row.metadata), version: row.version, contentState: row.content_state }))
+    if (options.deleted !== undefined && typeof options.deleted !== 'boolean') throw new Error('Invalid deleted filter')
+    return this.#db.prepare('SELECT id,metadata,version,content_state FROM notes WHERE (deleted IS NOT NULL)=? AND recovery=0 ORDER BY id LIMIT ? OFFSET ?')
+      .all(Number(options.deleted ?? false), limit, offset).map(row => ({ id: row.id, metadata: JSON.parse(row.metadata), version: row.version, contentState: row.content_state }))
   }
+
+  queryNotes(options = {}) { return queryNotes(this.#db, options) }
 
   search(query, options = {}) {
     const { limit, offset } = pageOptions(options)
