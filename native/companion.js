@@ -1,6 +1,11 @@
 import { createServer } from 'node:http'
-import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { randomBytes, timingSafeEqual, createHash } from 'node:crypto'
 import { Worker } from 'node:worker_threads'
+import { statSync, realpathSync } from 'node:fs'
+import path from 'node:path'
+import { permissions as validatePermissions, WRITE_ROUTES } from './companion-operations.js'
+
+export const MAX_WRITE_BYTES = 8 * 1024 * 1024
 
 function allowedOrigin(origin) {
   const url = new URL(origin)
@@ -8,11 +13,15 @@ function allowedOrigin(origin) {
   return origin
 }
 
-export async function startCompanion({ directory, origin, port = 0 }) {
+export async function startCompanion({ directory, origin, port = 0, permissions = [], lifetimeMs }) {
   allowedOrigin(origin)
+  permissions = validatePermissions(permissions)
+  const maximumLifetime = permissions.length ? 15 * 60 * 1000 : 8 * 60 * 60 * 1000
+  lifetimeMs ??= maximumLifetime
+  if (!Number.isInteger(lifetimeMs) || lifetimeMs < 1 || lifetimeMs > maximumLifetime) throw new Error('Invalid session lifetime')
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid port')
-  const token = randomBytes(32).toString('base64url'), expiresAt = Date.now() + 8 * 60 * 60 * 1000
-  const worker = new Worker(new URL('./companion-worker.js', import.meta.url), { workerData: { directory } })
+  const token = randomBytes(32).toString('base64url')
+  const worker = new Worker(new URL('./companion-worker.js', import.meta.url), { workerData: { directory, permissions } })
   const pending = new Map()
   let nextId = 0, failed = false, server
   const rejectPending = () => {
@@ -32,6 +41,11 @@ export async function startCompanion({ directory, origin, port = 0 }) {
       else { worker.terminate(); reject(new Error(message.startupError)) }
     })
   })
+  const expiresAt = Date.now() + lifetimeMs
+  const root = realpathSync(directory), file = statSync(path.join(root, 'vault.sqlite'))
+  // A replacement/restored database has a different recovery namespace. Drafts
+  // must never be replayed automatically against a different physical Vault.
+  const vaultId = createHash('sha256').update(JSON.stringify([root, file.dev, file.ino, file.birthtimeMs])).digest('hex')
   worker.on('message', message => {
     const item = pending.get(message.requestId)
     if (!item) return
@@ -54,21 +68,47 @@ export async function startCompanion({ directory, origin, port = 0 }) {
     res.setHeader('Access-Control-Allow-Origin', origin)
     res.setHeader('Vary', 'Origin')
     if (req.method === 'OPTIONS') {
-      if (req.headers['access-control-request-method'] !== 'GET' || req.headers['access-control-request-headers']?.toLowerCase() !== 'authorization') { respond(403, 'Preflight rejected'); return }
-      res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': 'Authorization', 'Access-Control-Allow-Private-Network': 'true' }); res.end(); return
+      const method = req.headers['access-control-request-method']
+      const headers = req.headers['access-control-request-headers']?.toLowerCase().split(',').map(value => value.trim()).sort().join(',')
+      if (!(method === 'GET' && headers === 'authorization') && !(permissions.length && method === 'POST' && headers === 'authorization,content-type')) { respond(403, 'Preflight rejected'); return }
+      res.writeHead(204, { 'Access-Control-Allow-Methods': permissions.length ? 'GET, POST' : 'GET', 'Access-Control-Allow-Headers': permissions.length ? 'Authorization, Content-Type' : 'Authorization', 'Access-Control-Allow-Private-Network': 'true' }); res.end(); return
     }
     const supplied = req.headers.authorization
     const expected = `Bearer ${token}`
     if (Date.now() >= expiresAt || typeof supplied !== 'string' || Buffer.byteLength(supplied) !== Buffer.byteLength(expected) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))) { respond(401, 'Unauthorised session'); return }
-    if (req.method !== 'GET') { respond(405, 'Read-only companion'); return }
-    if (req.headers['transfer-encoding'] || (req.headers['content-length'] && req.headers['content-length'] !== '0') || req.url.length > 2048) { respond(400, 'Invalid request'); return }
+    if (req.method !== 'GET' && !(permissions.length && req.method === 'POST')) { respond(405, 'Read-only companion or unsupported method'); return }
+    if (req.url.length > 2048 || (req.method === 'GET' && (req.headers['transfer-encoding'] || (req.headers['content-length'] && req.headers['content-length'] !== '0')))) { respond(400, 'Invalid request'); return }
     try {
       const url = new URL(req.url, `http://${host}`)
       if (!req.url.startsWith('/') || url.origin !== `http://${host}`) throw new Error('Invalid request')
+      if (req.method === 'POST') {
+        const operation = url.pathname.startsWith('/v1/write/') ? url.pathname.slice('/v1/write/'.length) : ''
+        if (!Object.hasOwn(WRITE_ROUTES, operation)) { respond(404, 'Unknown endpoint'); return }
+        if (!permissions.includes(WRITE_ROUTES[operation])) { respond(403, 'Permission denied'); return }
+        if (url.search || req.headers['content-type'] !== 'application/json' || req.headers['content-encoding']) { respond(400, 'Invalid JSON request'); return }
+        if (Number(req.headers['content-length']) > MAX_WRITE_BYTES) { respond(413, 'Request too large'); return }
+        let size = 0
+        const chunks = []
+        for await (const chunk of req) {
+          size += chunk.length
+          if (size > MAX_WRITE_BYTES) { respond(413, 'Request too large'); return }
+          chunks.push(chunk)
+        }
+        if (Date.now() >= expiresAt) { respond(401, 'Expired session'); return }
+        let args
+        try { args = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { throw new Error('Invalid request') }
+        const result = await dispatch(operation, args)
+        if (result.error) { respond(result.status, result.error); return }
+        res.writeHead(200, { 'Content-Type': result.contentType }); res.end(result.body); return
+      }
+      if (url.pathname === '/v1/info' && !url.search) {
+        res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ vaultId, permissions, expiresAt })); return
+      }
       const routes = {
-        '/v1/notes': ['list', ['limit', 'offset']], '/v1/note': ['read', ['id']],
+        '/v1/notes': ['list', ['limit', 'offset', 'deleted']], '/v1/note': ['read', ['id']],
         '/v1/search': ['search', ['q', 'limit', 'offset']], '/v1/attachment': ['attachment', ['noteId', 'id']],
         '/v1/changes': ['changes', ['after', 'limit']],
+        '/v1/views': ['views', ['limit', 'offset', 'definitions', 'tag', 'status', 'project', 'favorite', 'sort', 'layout']],
       }
       const route = routes[url.pathname]
       if (!route) { respond(404, 'Unknown endpoint'); return }
@@ -78,6 +118,9 @@ export async function startCompanion({ directory, origin, port = 0 }) {
         if (['limit', 'offset', 'after'].includes(key)) {
           if (!/^\d+$/.test(value)) throw new Error('Invalid request')
           args[key] = Number(value)
+        } else if (['deleted', 'definitions', 'favorite'].includes(key)) {
+          if (!['true', 'false'].includes(value)) throw new Error('Invalid request')
+          args[key] = value === 'true'
         } else args[key] = value
       }
       if (operation === 'changes' && (args.limit ?? 50) > 100) throw new Error('Invalid request')
@@ -95,7 +138,7 @@ export async function startCompanion({ directory, origin, port = 0 }) {
   } catch (error) { await worker.terminate(); throw error }
   let closed = false
   return {
-    url: `http://127.0.0.1:${server.address().port}`, token, origin, expiresAt,
+    url: `http://127.0.0.1:${server.address().port}`, token, origin, expiresAt, permissions, vaultId,
     async close() {
       if (closed) return
       closed = true; rejectPending()
