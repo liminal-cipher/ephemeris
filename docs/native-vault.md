@@ -464,15 +464,15 @@ npm run test:e2e
 git diff --check
 ```
 
-GitHub Actions [run 42260268543](https://github.com/liminal-cipher/ephemeris/actions/runs/42260268543)
-passed at `d8f1fed` on macOS, Windows and Ubuntu with Node 24. Each runner passed
-65 unit, 132 native and 31 browser tests, including Chromium, Firefox and WebKit.
+GitHub Actions [run 42270936866](https://github.com/liminal-cipher/ephemeris/actions/runs/42270936866)
+passed at `8b00661` on macOS, Windows and Ubuntu with Node 24. Each runner passed
+69 unit, 132 native and 49 browser tests, including Chromium, Firefox and WebKit.
 The earlier run `42231015207` at `03c8e5b` had failed 19 native tests on macOS;
 the trusted fixture correction has now passed on an actual macOS runner.
 Native tests use temporary directories and synthetic data, including a
 real BrowserVault export, independent writer processes, forced journal errors,
 an interrupted real importer, corruption and symlink rejection. Local results
-are recorded in the 7 November expansion section of `ephemeris-2-handoff.md`.
+are recorded in the 7 November UI audit and expansion sections of `ephemeris-2-handoff.md`.
 Automated local and runner results do not establish human acceptance.
 
 Known limits: no E2EE, multi-user identity/roles, deployed production service,

@@ -3,9 +3,10 @@
 ## UI reliability audit: 7 November 2026
 
 The UI audit started at fetched `main`/`origin/main` `d8f1fed`, preserving the
-four existing documentation edits. The changes were local at audit completion.
-The user subsequently authorised semantic commits and pushes, followed by a
-file-naming and structure review. Deployment remains outside the task's scope.
+four existing documentation edits. The user subsequently authorised semantic
+commits and pushes, followed by a file-naming and structure review. The UI audit
+was published in six commits from `3e072d0` to `8b00661`; the structure review
+produced `cd5bb14` and `f2ae59b`. Deployment remains outside the task's scope.
 
 Implemented corrections:
 
@@ -73,9 +74,41 @@ with a viewport assertion. Test-created fixtures were torn down. One fixture lef
 by an earlier failed test was verified as synthetic, then recycled; its absence
 was checked. No task-owned preview server remains.
 
-These follow-up edits have **not** run on macOS or Linux. The successful three-OS
-CI linked below covers published `d8f1fed`, not this uncommitted diff. No new
-performance benchmark or dependency change was part of this UI audit.
+[CI run 42270936866](https://github.com/liminal-cipher/ephemeris/actions/runs/42270936866)
+passed for published `8b00661` on macOS, Windows and Ubuntu. Each runner's logs
+confirm 69 unit, 132 native and 49 browser tests passed, plus the build and lint
+steps. This is actual runner evidence for the UI audit, separate from the earlier
+`d8f1fed` baseline. No new performance benchmark or dependency change was part of
+this UI audit.
+
+### File naming, test structure and publication
+
+The source layout still separates browser components/storage, native APIs and
+end-to-end tests. No wider folder move was justified by this review. Vault file
+names, schema, persisted keys, public CLI paths and module dependencies are unchanged.
+
+- `src/store/useStore.js` and its test became `navigationStore.js` and
+  `navigationStore.test.js`; the exported hook is `useNavigationStore`. This store
+  holds only transient page selection, separate from canonical workspace data.
+  Imports in CommandPalette, GraphView, PageEditor, Sidebar and its test were updated.
+- `src/components/editor/suggestion.js` became `wikiLinkSuggestion.js`, with its
+  PageEditor import named explicitly to distinguish it from slash suggestions.
+- `e2e/fixtures/native-editing.js` now shares canonical synthetic temporary roots,
+  scoped session files, Companion restart/cleanup and browser connection between
+  `native-edit.spec.js` and `ui-resilience.spec.js`. Partially initialised fixtures
+  also clean up. Read-only and forced-process fixtures keep their different lifecycles.
+
+After these changes, Windows ran `npm test` (69 tests / 14 files), `npm run build`
+(65 offline assets) and `npx playwright test --output=test-results/structure --reporter=line`
+(49 tests in 2.0 minutes). Focused lint and `git diff --check` passed; no obsolete
+source import remains. The 32 new screenshots are under `test-results/structure/`;
+the WebKit narrow editor and Chromium rejected-move screenshots were opened and
+inspected. These checks cover the published code at `f2ae59b`.
+Its separate workflow is [run 42272147453](https://github.com/liminal-cipher/ephemeris/actions/runs/42272147453).
+
+Both publication batches were explicitly authorised, pushed normally to `main`
+and read back from the remote. The local `CURRENT_TASK.md` remains Git-ignored;
+tracked handoff and plan updates carry the shared state.
 
 Remaining inspection gaps include physical OS IME, shipping Safari, screen-reader
 acceptance and real disk/power failure. Existing `PageHeader.jsx` and `PageIcon.jsx`
