@@ -1,12 +1,12 @@
 import React from 'react'
-import { BubbleMenu } from '@tiptap/react'
+import { BubbleMenu } from '@tiptap/react/menus'
 import { Bold, Italic, Underline as UnderlineIcon, Strikethrough } from 'lucide-react'
 
 export default function EditorToolbar({ editor }) {
   if (!editor) return null;
 
   return (
-    <BubbleMenu editor={editor} tippyOptions={{ duration: 100 }} className="bubble-menu">
+    <BubbleMenu editor={editor} className="bubble-menu">
       <button
         onClick={() => editor.chain().focus().toggleBold().run()}
         className={editor.isActive('bold') ? 'is-active' : ''}

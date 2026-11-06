@@ -6,7 +6,7 @@ import { usePagesList, deleteWorkspacePage, useWorkspaceStore } from '../store/w
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Collaboration from '@tiptap/extension-collaboration'
-import CollaborationCursor from '@tiptap/extension-collaboration-cursor'
+import CollaborationCaret from '@tiptap/extension-collaboration-caret'
 import Mention from '@tiptap/extension-mention'
 import Underline from '@tiptap/extension-underline'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
@@ -107,7 +107,9 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
 
   const baseExtensions = [
     StarterKit.configure({
-      history: false,
+      undoRedo: false,
+      underline: false,
+      link: false,
       codeBlock: false, // disable default codeBlock to use lowlight
     }),
     Underline,
@@ -136,7 +138,7 @@ export default function PageEditor({ onToggleSidebar, sidebarOpen }) {
         document: ydoc,
       }),
       ...(provider ? [
-        CollaborationCursor.configure({
+        CollaborationCaret.configure({
           provider: provider,
           user: {
             name: 'Anonymous User',

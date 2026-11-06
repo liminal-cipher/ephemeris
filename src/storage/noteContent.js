@@ -10,7 +10,7 @@ import { prosemirrorJSONToYDoc, yDocToProsemirrorJSON } from 'y-prosemirror'
 
 // Legacy codec adapter, separate from the storage core and editor controls.
 export const noteSchema = getSchema([
-  StarterKit.configure({ history: false, codeBlock: false }), Underline,
+  StarterKit.configure({ undoRedo: false, codeBlock: false, underline: false, link: false }), Underline,
   Mention, CodeBlockLowlight.configure({ lowlight }), MathExtension,
 ])
 
