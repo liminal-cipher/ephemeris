@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync, existsSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync, existsSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fork, spawnSync } from 'node:child_process'
@@ -13,11 +13,13 @@ import { digest } from '../validation.js'
 import { browserBackup, documentBytes, rehash } from './fixtures.js'
 
 function fixture(t) {
-  const root = mkdtempSync(path.join(tmpdir(), 'ephemeris-native-'))
+  // macOS may return /var/folders beneath the trusted /var -> /private/var alias.
+  const root = mkdtempSync(path.join(realpathSync(tmpdir()), 'ephemeris-native-'))
   const directory = path.join(root, 'vault')
-  const vault = NativeVault.create(directory)
-  const handles = [vault]
+  const handles = []
   t.after(() => { handles.forEach(handle => handle.close()); rmSync(root, { recursive: true, force: true }) })
+  const vault = NativeVault.create(directory)
+  handles.push(vault)
   return { root, directory, vault, track: handle => { handles.push(handle); return handle },
     open: () => { const next = NativeVault.open(directory); handles.push(next); return next } }
 }
